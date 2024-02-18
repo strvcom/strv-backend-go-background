@@ -1,0 +1,8 @@
+# Local configuration
+.bashrc
+.zshrc
+
+# MacOS
+.DS_Store
+
+*.log
