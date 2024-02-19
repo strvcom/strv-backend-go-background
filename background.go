@@ -5,7 +5,7 @@ import (
 	"sync"
 )
 
-// Executor keeps track of scheduled goroutines and provides mechanisms to wait for them to finish. `Meta` is whatever
+// Manager keeps track of scheduled goroutines and provides mechanisms to wait for them to finish. `Meta` is whatever
 // you wish to associate with this task, usually something that will help you keep track of the tasks.
 //
 // This is useful in context of HTTP servers, where a customer request may result in some kind of background processing
@@ -14,7 +14,7 @@ import (
 // before they can run to completion. This package is not a replacement for a proper task queue system but it is a great
 // package to schedule the queue jobs without the customer waiting for that to happen while at the same time being able
 // to wait for all those goroutines to finish before allowing the process to exit.
-type Executor[Meta any] struct {
+type Manager[Meta any] struct {
 	wg  sync.WaitGroup
 	len int
 
@@ -30,59 +30,59 @@ type Executor[Meta any] struct {
 // Task is the function to be executed in a goroutine
 type Task func(ctx context.Context) error
 
-// NewExecutor creates a new instance of Background with the provided generic type for the metadata argument.
-func NewExecutor[Meta any]() *Executor[Meta] {
-	return &Executor[Meta]{}
+// NewManager creates a new instance of Manager with the provided generic type for the metadata argument.
+func NewManager[Meta any]() *Manager[Meta] {
+	return &Manager[Meta]{}
 }
 
 // Run schedules the provided task to be executed in a goroutine. `Meta` is whatever you wish to associate with the
 // task.
-func (b *Executor[Meta]) Run(ctx context.Context, meta Meta, task Task) {
-	b.callOnTaskAdded(ctx, meta)
-	b.wg.Add(1)
-	b.len++
-	go b.run(context.WithoutCancel(ctx), meta, task)
+func (m *Manager[Meta]) Run(ctx context.Context, meta Meta, task Task) {
+	m.callOnTaskAdded(ctx, meta)
+	m.wg.Add(1)
+	m.len++
+	go m.run(context.WithoutCancel(ctx), meta, task)
 }
 
 // Drain waits for all scheduled tasks to finish
-func (b *Executor[Meta]) Drain() {
-	b.wg.Wait()
+func (m *Manager[Meta]) Drain() {
+	m.wg.Wait()
 }
 
 // Len returns the number of currently running tasks
-func (b *Executor[Meta]) Len() int {
-	return b.len
+func (m *Manager[Meta]) Len() int {
+	return m.len
 }
 
-func (b *Executor[Meta]) run(ctx context.Context, meta Meta, task Task) {
+func (m *Manager[Meta]) run(ctx context.Context, meta Meta, task Task) {
 	defer func() {
-		b.wg.Done()
-		b.len--
+		m.wg.Done()
+		m.len--
 	}()
 
 	err := task(ctx)
 
 	if err != nil {
-		b.callOnTaskFailed(ctx, meta, err)
+		m.callOnTaskFailed(ctx, meta, err)
 	} else {
-		b.callOnTaskSucceeded(ctx, meta)
+		m.callOnTaskSucceeded(ctx, meta)
 	}
 }
 
-func (b *Executor[Meta]) callOnTaskFailed(ctx context.Context, meta Meta, err error) {
-	if b.OnTaskFailed != nil {
-		b.OnTaskFailed(ctx, meta, err)
+func (m *Manager[Meta]) callOnTaskFailed(ctx context.Context, meta Meta, err error) {
+	if m.OnTaskFailed != nil {
+		m.OnTaskFailed(ctx, meta, err)
 	}
 }
 
-func (b *Executor[Meta]) callOnTaskSucceeded(ctx context.Context, meta Meta) {
-	if b.OnTaskSucceeded != nil {
-		b.OnTaskSucceeded(ctx, meta)
+func (m *Manager[Meta]) callOnTaskSucceeded(ctx context.Context, meta Meta) {
+	if m.OnTaskSucceeded != nil {
+		m.OnTaskSucceeded(ctx, meta)
 	}
 }
 
-func (b *Executor[Meta]) callOnTaskAdded(ctx context.Context, meta Meta) {
-	if b.OnTaskAdded != nil {
-		b.OnTaskAdded(ctx, meta)
+func (m *Manager[Meta]) callOnTaskAdded(ctx context.Context, meta Meta) {
+	if m.OnTaskAdded != nil {
+		m.OnTaskAdded(ctx, meta)
 	}
 }

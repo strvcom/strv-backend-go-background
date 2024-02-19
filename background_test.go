@@ -9,19 +9,19 @@ import (
 )
 
 func Test_New(t *testing.T) {
-	b := background.NewExecutor[bool]()
-	assert.NotNil(t, b)
-	assert.IsType(t, &background.Executor[bool]{}, b)
-	assert.Nil(t, b.OnTaskAdded)
-	assert.Nil(t, b.OnTaskSucceeded)
-	assert.Nil(t, b.OnTaskFailed)
+	m := background.NewManager[bool]()
+	assert.NotNil(t, m)
+	assert.IsType(t, &background.Manager[bool]{}, m)
+	assert.Nil(t, m.OnTaskAdded)
+	assert.Nil(t, m.OnTaskSucceeded)
+	assert.Nil(t, m.OnTaskFailed)
 }
 
 func Test_RunExecutesInGoroutine(t *testing.T) {
-	b := background.NewExecutor[bool]()
+	m := background.NewManager[bool]()
 	proceed := make(chan bool, 1)
 
-	b.Run(context.Background(), true, func(ctx context.Context) error {
+	m.Run(context.Background(), true, func(ctx context.Context) error {
 		// Let the main thread advance a bit
 		<-proceed
 		proceed <- true
@@ -31,24 +31,24 @@ func Test_RunExecutesInGoroutine(t *testing.T) {
 	// If the func is not executed in a goroutine the main thread will not be able to advance and the test will time out
 	assert.Empty(t, proceed)
 	proceed <- true
-	b.Drain()
+	m.Drain()
 	assert.True(t, <-proceed)
 }
 
 func Test_DrainWaitsForPendingTasks(t *testing.T) {
-	b := background.NewExecutor[bool]()
+	m := background.NewManager[bool]()
 	proceed := make(chan bool, 1)
 	done := make(chan bool, 1)
 	var drained bool
 
-	b.Run(context.Background(), true, func(ctx context.Context) error {
+	m.Run(context.Background(), true, func(ctx context.Context) error {
 		// Let the main thread advance a bit
 		<-proceed
 		return nil
 	})
 
 	go func() {
-		b.Drain()
+		m.Drain()
 		drained = true
 		done <- true
 	}()
@@ -60,11 +60,11 @@ func Test_DrainWaitsForPendingTasks(t *testing.T) {
 }
 
 func Test_CancelledParentContext(t *testing.T) {
-	b := background.NewExecutor[bool]()
+	m := background.NewManager[bool]()
 	ctx, cancel := context.WithCancel(context.Background())
 	proceed := make(chan bool, 1)
 
-	b.Run(ctx, true, func(ctx context.Context) error {
+	m.Run(ctx, true, func(ctx context.Context) error {
 		<-proceed
 		assert.Nil(t, ctx.Err())
 		return nil
@@ -72,80 +72,80 @@ func Test_CancelledParentContext(t *testing.T) {
 
 	cancel()
 	proceed <- true
-	b.Drain()
+	m.Drain()
 }
 
 func Test_Len(t *testing.T) {
-	b := background.NewExecutor[bool]()
+	m := background.NewManager[bool]()
 	proceed := make(chan bool, 1)
 	remaining := 10
 
-	b.OnTaskSucceeded = func(ctx context.Context, meta bool) {
-		assert.Equal(t, remaining, b.Len())
+	m.OnTaskSucceeded = func(ctx context.Context, meta bool) {
+		assert.Equal(t, remaining, m.Len())
 		remaining--
 		proceed <- true
 	}
 
 	for range 10 {
-		b.Run(context.Background(), true, func(ctx context.Context) error {
+		m.Run(context.Background(), true, func(ctx context.Context) error {
 			<-proceed
 			return nil
 		})
 	}
 
 	proceed <- true
-	b.Drain()
-	assert.Equal(t, 0, b.Len())
+	m.Drain()
+	assert.Equal(t, 0, m.Len())
 }
 
 func Test_OnTaskAdded(t *testing.T) {
-	b := background.NewExecutor[bool]()
+	m := background.NewManager[bool]()
 	metaval := true
 	executed := false
 
-	b.OnTaskAdded = func(ctx context.Context, meta bool) {
+	m.OnTaskAdded = func(ctx context.Context, meta bool) {
 		assert.Equal(t, metaval, meta)
 		executed = true
 	}
 
-	b.Run(context.Background(), metaval, func(ctx context.Context) error {
+	m.Run(context.Background(), metaval, func(ctx context.Context) error {
 		return nil
 	})
-	b.Drain()
+	m.Drain()
 	assert.True(t, executed)
 }
 
 func Test_OnTaskSucceeded(t *testing.T) {
-	b := background.NewExecutor[bool]()
+	m := background.NewManager[bool]()
 	metaval := true
 	executed := false
 
-	b.OnTaskSucceeded = func(ctx context.Context, meta bool) {
+	m.OnTaskSucceeded = func(ctx context.Context, meta bool) {
 		assert.Equal(t, metaval, meta)
 		executed = true
 	}
 
-	b.Run(context.Background(), metaval, func(ctx context.Context) error {
+	m.Run(context.Background(), metaval, func(ctx context.Context) error {
 		return nil
 	})
-	b.Drain()
+	m.Drain()
 	assert.True(t, executed)
 }
 
 func Test_OnTaskFailed(t *testing.T) {
-	b := background.NewExecutor[bool]()
+	m := background.NewManager[bool]()
 	metaval := true
 	executed := false
 
-	b.OnTaskFailed = func(ctx context.Context, meta bool, err error) {
+	m.OnTaskFailed = func(ctx context.Context, meta bool, err error) {
 		assert.Equal(t, metaval, meta)
 		assert.Error(t, err)
 		executed = true
 	}
 
-	b.Run(context.Background(), metaval, func(ctx context.Context) error {
+	m.Run(context.Background(), metaval, func(ctx context.Context) error {
 		return assert.AnError
 	})
-	b.Drain()
+	m.Drain()
 	assert.True(t, executed)
 }
