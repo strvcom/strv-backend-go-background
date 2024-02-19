@@ -8,6 +8,8 @@ In Go, when the `main` function returns, any pending goroutines are terminated. 
 
 This library makes that management process easier to manage and adds some extra functionality on top, for good measure.
 
+> ⚠️ By no means is this a replacement for proper job queue system! The intended use case is for small, relatiely fast functions that either do the actual work or schedule a job in some kind of a queue to do that work. Since even putting a job into a queue takes some time, you can remove that time from the client's request/response cycle and make your backend respond faster.
+
 ## Installation
 
 ```sh
@@ -42,7 +44,9 @@ func main() {
   }
 
   // Wait for all goroutines to finish
+  // Make sure you stop your components from adding more tasks
   bg.Wait()
+  // Now it's safe to terminate the process
 }
 ```
 
