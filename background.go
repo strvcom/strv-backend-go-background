@@ -44,8 +44,8 @@ func (m *Manager[Meta]) Run(ctx context.Context, meta Meta, task Task) {
 	go m.run(context.WithoutCancel(ctx), meta, task)
 }
 
-// Drain waits for all scheduled tasks to finish
-func (m *Manager[Meta]) Drain() {
+// Wait blocks until all scheduled tasks have finished.
+func (m *Manager[Meta]) Wait() {
 	m.wg.Wait()
 }
 

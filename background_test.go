@@ -31,15 +31,15 @@ func Test_RunExecutesInGoroutine(t *testing.T) {
 	// If the func is not executed in a goroutine the main thread will not be able to advance and the test will time out
 	assert.Empty(t, proceed)
 	proceed <- true
-	m.Drain()
+	m.Wait()
 	assert.True(t, <-proceed)
 }
 
-func Test_DrainWaitsForPendingTasks(t *testing.T) {
+func Test_WaitWaitsForPendingTasks(t *testing.T) {
 	m := background.NewManager[bool]()
 	proceed := make(chan bool, 1)
 	done := make(chan bool, 1)
-	var drained bool
+	var waited bool
 
 	m.Run(context.Background(), true, func(ctx context.Context) error {
 		// Let the main thread advance a bit
@@ -48,15 +48,15 @@ func Test_DrainWaitsForPendingTasks(t *testing.T) {
 	})
 
 	go func() {
-		m.Drain()
-		drained = true
+		m.Wait()
+		waited = true
 		done <- true
 	}()
 
-	assert.False(t, drained)
+	assert.False(t, waited)
 	proceed <- true
 	<-done
-	assert.True(t, drained)
+	assert.True(t, waited)
 }
 
 func Test_CancelledParentContext(t *testing.T) {
@@ -72,7 +72,7 @@ func Test_CancelledParentContext(t *testing.T) {
 
 	cancel()
 	proceed <- true
-	m.Drain()
+	m.Wait()
 }
 
 func Test_Len(t *testing.T) {
@@ -94,7 +94,7 @@ func Test_Len(t *testing.T) {
 	}
 
 	proceed <- true
-	m.Drain()
+	m.Wait()
 	assert.Equal(t, 0, m.Len())
 }
 
@@ -111,7 +111,7 @@ func Test_OnTaskAdded(t *testing.T) {
 	m.Run(context.Background(), metaval, func(ctx context.Context) error {
 		return nil
 	})
-	m.Drain()
+	m.Wait()
 	assert.True(t, executed)
 }
 
@@ -128,7 +128,7 @@ func Test_OnTaskSucceeded(t *testing.T) {
 	m.Run(context.Background(), metaval, func(ctx context.Context) error {
 		return nil
 	})
-	m.Drain()
+	m.Wait()
 	assert.True(t, executed)
 }
 
@@ -146,6 +146,6 @@ func Test_OnTaskFailed(t *testing.T) {
 	m.Run(context.Background(), metaval, func(ctx context.Context) error {
 		return assert.AnError
 	})
-	m.Drain()
+	m.Wait()
 	assert.True(t, executed)
 }
