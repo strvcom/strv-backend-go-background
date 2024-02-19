@@ -12,7 +12,6 @@ func Test_New(t *testing.T) {
 	b := background.NewExecutor[bool]()
 	assert.NotNil(t, b)
 	assert.IsType(t, &background.Executor[bool]{}, b)
-
 	assert.Nil(t, b.OnTaskAdded)
 	assert.Nil(t, b.OnTaskSucceeded)
 	assert.Nil(t, b.OnTaskFailed)
@@ -74,6 +73,29 @@ func Test_CancelledParentContext(t *testing.T) {
 	cancel()
 	proceed <- true
 	b.Drain()
+}
+
+func Test_Len(t *testing.T) {
+	b := background.NewExecutor[bool]()
+	proceed := make(chan bool, 1)
+	remaining := 10
+
+	b.OnTaskSucceeded = func(ctx context.Context, meta bool) {
+		assert.Equal(t, remaining, b.Len())
+		remaining--
+		proceed <- true
+	}
+
+	for range 10 {
+		b.Run(context.Background(), true, func(ctx context.Context) error {
+			<-proceed
+			return nil
+		})
+	}
+
+	proceed <- true
+	b.Drain()
+	assert.Equal(t, 0, b.Len())
 }
 
 func Test_OnTaskAdded(t *testing.T) {

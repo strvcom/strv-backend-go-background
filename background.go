@@ -15,11 +15,16 @@ import (
 // package to schedule the queue jobs without the customer waiting for that to happen while at the same time being able
 // to wait for all those goroutines to finish before allowing the process to exit.
 type Executor[Meta any] struct {
-	wg sync.WaitGroup
+	wg  sync.WaitGroup
+	len int
 
-	OnTaskAdded     func(ctx context.Context, meta Meta)
+	// OnTaskAdded is called immediately after calling Run(). You can use this for logging, metrics or other purposes.
+	OnTaskAdded func(ctx context.Context, meta Meta)
+	// OnTaskSucceeded is called immediately after Task returns. You can use this for logging, metrics or other purposes.
 	OnTaskSucceeded func(ctx context.Context, meta Meta)
-	OnTaskFailed    func(ctx context.Context, meta Meta, err error)
+	// OnTaskFailed is called immediately after Task returns with an error. You can use this for logging, metrics or other
+	// purposes.
+	OnTaskFailed func(ctx context.Context, meta Meta, err error)
 }
 
 // Task is the function to be executed in a goroutine
@@ -35,6 +40,7 @@ func NewExecutor[Meta any]() *Executor[Meta] {
 func (b *Executor[Meta]) Run(ctx context.Context, meta Meta, task Task) {
 	b.callOnTaskAdded(ctx, meta)
 	b.wg.Add(1)
+	b.len++
 	go b.run(context.WithoutCancel(ctx), meta, task)
 }
 
@@ -43,8 +49,17 @@ func (b *Executor[Meta]) Drain() {
 	b.wg.Wait()
 }
 
+// Len returns the number of currently running tasks
+func (b *Executor[Meta]) Len() int {
+	return b.len
+}
+
 func (b *Executor[Meta]) run(ctx context.Context, meta Meta, task Task) {
-	defer b.wg.Done()
+	defer func() {
+		b.wg.Done()
+		b.len--
+	}()
+
 	err := task(ctx)
 
 	if err != nil {
