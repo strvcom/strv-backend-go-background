@@ -1,0 +1,14 @@
+#!/bin/sh
+
+# This script runs golangci-lint on the current directory via Docker.
+# It exists solely to avoid having to install golangci-lint locally.
+set -e
+
+image="golangci/golangci-lint:v1.56-alpine"
+
+exec docker run -t \
+  --rm \
+  --volume "$(pwd):/app" \
+  --volume "$(pwd)/.cache/golangci-lint:/root/.cache" \
+  --workdir /app \
+  "$image" golangci-lint "$@"
