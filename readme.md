@@ -22,31 +22,40 @@ go get go.strv.io/background
 package main
 
 import (
-  "context"
+	"context"
+	"fmt"
 
-  "go.strv.io/background"
+	"go.strv.io/background"
 )
 
-type BackgroundMetadata string
+// Define a type for the metadata that you want to associate with your tasks
+// This can be any type that you want, such as a struct, map or string. Anything
+// that you need to identify your tasks.
+type BackgroundMeta string
 
 func main() {
-  // Create a new background manager
-  mgr := background.NewManager[BackgroundMetadata]()
+	// Create a new background manager
+	manager := background.NewManager[BackgroundMeta]()
+	manager.Run(context.Background(), "goroutine-1", func(ctx context.Context) error {
+		// Do some work here
+		return nil
+	})
 
-  mgr.Run(context.Background(), "goroutine-1", func(ctx context.Context) error {
-    // Do some work here
-    return nil
-  })
+	// Define some monitoring functions for logging or error reporting
+	manager.OnTaskAdded = func(ctx context.Context, meta BackgroundMeta) {
+		fmt.Println("Task added:", meta)
+	}
+	manager.OnTaskSucceeded = func(ctx context.Context, meta BackgroundMeta) {
+		fmt.Println("Task succeeded:", meta)
+	}
+	manager.OnTaskFailed = func(ctx context.Context, meta BackgroundMeta, err error) {
+		fmt.Println("Task failed:", meta, err)
+	}
 
-  // Attach some monitoring logic for logging or similar purpose
-  mgr.OnTaskFailed = func(ctx context.Context, meta BackgroundMetadata, err error) {
-    // Log the error, inspect the metadata, etc.
-  }
-
-  // Wait for all goroutines to finish
-  // Make sure you stop your components from adding more tasks
-  bg.Wait()
-  // Now it's safe to terminate the process
+	// Wait for all goroutines to finish
+	// Make sure you stop your components from adding more tasks
+	manager.Wait()
+	// Now it's safe to terminate the process
 }
 ```
 
