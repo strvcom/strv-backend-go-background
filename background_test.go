@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/robertrossmann/background"
 	"github.com/stretchr/testify/assert"
+	"go.strv.io/background"
 )
 
 func Test_New(t *testing.T) {

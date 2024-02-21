@@ -1,4 +1,4 @@
-# `github.com/robertrossmann/background`
+# `go.strv.io/background`
 
 > A package that keeps track of goroutines and allows you to wait for them to finish when it's time to shut down your application.
 
@@ -13,7 +13,7 @@ This library makes that management process easier to manage and adds some extra 
 ## Installation
 
 ```sh
-go get github.com/robertrossmann/background
+go get go.strv.io/background
 ```
 
 ## Usage
@@ -24,7 +24,7 @@ package main
 import (
   "context"
 
-  "github.com/robertrossmann/background"
+  "go.strv.io/background"
 )
 
 type BackgroundMetadata string

@@ -1,4 +1,4 @@
-module github.com/robertrossmann/background
+module go.strv.io/background
 
 go 1.22.0
 

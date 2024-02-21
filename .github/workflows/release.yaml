@@ -18,6 +18,6 @@ jobs:
       - run: npx semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - run: go list -m github.com/robertrossmann/background@$(git describe --tags --abbrev=0)
+      - run: go list -m go.strv.io/background@$(git describe --tags --abbrev=0)
         env:
           GOPROXY: proxy.golang.org
