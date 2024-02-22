@@ -1,5 +1,7 @@
 # `go.strv.io/background`
 
+[![Tests][badge-tests]][workflow-tests] [![codecov][badge-codecov]][codecov-dashboard]
+
 > A package that keeps track of goroutines and allows you to wait for them to finish when it's time to shut down your application.
 
 ## Purpose
@@ -62,3 +64,8 @@ func main() {
 ## License
 
 See the [LICENSE](LICENSE) file for details.
+
+[badge-tests]: https://github.com/strvcom/strv-backend-go-background/actions/workflows/test.yaml/badge.svg
+[workflow-tests]: https://github.com/strvcom/strv-backend-go-background/actions/workflows/test.yaml
+[badge-codecov]: https://codecov.io/gh/strvcom/strv-backend-go-background/graph/badge.svg?token=ST3JD5GCRN
+[codecov-dashboard]: https://codecov.io/gh/strvcom/strv-backend-go-background

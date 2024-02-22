@@ -19,4 +19,9 @@ jobs:
         with:
           go-version-file: go.mod
       - run: go version
-      - run: go test -v ./...
+      - run: make test
+      - name: Upload coverage reports to Codecov
+        if: success()
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
