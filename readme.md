@@ -8,9 +8,9 @@
 
 In Go, when the `main` function returns, any pending goroutines are terminated. This means that we need to keep track of them somehow so that `main` can wait for them to finish before returning. This is also useful in the context of servers - when the server receives a terminating signal from the host OS (ie. due to a new release being deployed) the application needs a way to delay the shutdown long enough for the goroutines to finish before allowing itself to be terminated.
 
-This library makes that management process easier to manage and adds some extra functionality on top, for good measure.
+This library makes that management process easier and adds some extra functionality on top, for good measure.
 
-> ⚠️ By no means is this a replacement for proper job queue system! The intended use case is for small, relatiely fast functions that either do the actual work or schedule a job in some kind of a queue to do that work. Since even putting a job into a queue takes some time, you can remove that time from the client's request/response cycle and make your backend respond faster.
+> ⚠️ By no means is this a replacement for proper job queue system! The intended use case is for small, relatively fast functions that either do the actual work or schedule a job in some kind of a queue to do that work. Since even putting a job into a queue takes some time, you can remove that time from the client's request/response cycle and make your backend respond faster.
 
 ## Installation
 
@@ -30,9 +30,9 @@ import (
 	"go.strv.io/background"
 )
 
-// Define a type for the metadata that you want to associate with your tasks
-// This can be any type that you want, such as a struct, map or string. Anything
-// that you need to identify your tasks.
+// Define a type for the metadata that you want to associate with your tasks.
+// The metadata is provided by the caller when a task is scheduled and is passed
+// to the monitoring functions.
 type BackgroundMeta string
 
 func main() {
