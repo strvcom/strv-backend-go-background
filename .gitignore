@@ -5,6 +5,14 @@
 # MacOS
 .DS_Store
 
-*.log
 .cache
 coverage.txt
+
+# Test binary, built with `go test -c`
+*.test
+# Local files, backups, logs and temporary files
+**/*.local
+**/*.local.*
+**/*.bkp
+**/*.log
+**/*.tmp
