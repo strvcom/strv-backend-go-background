@@ -33,26 +33,28 @@ import (
 // Define a type for the metadata that you want to associate with your tasks.
 // The metadata is provided by the caller when a task is scheduled and is passed
 // to the monitoring functions.
-type BackgroundMeta string
+type TaskMetadata string
 
 func main() {
 	// Create a new background manager
-	manager := background.NewManager[BackgroundMeta]()
-	manager.Run(context.Background(), "goroutine-1", func(ctx context.Context) error {
+	manager := background.NewManager[TaskMetadata]()
+	// Define some monitoring functions for logging or error reporting
+	manager.OnTaskAdded = func(ctx context.Context, meta TaskMetadata) {
+		fmt.Println("Task added:", meta)
+	}
+	manager.OnTaskSucceeded = func(ctx context.Context, meta TaskMetadata) {
+		fmt.Println("Task succeeded:", meta)
+	}
+	manager.OnTaskFailed = func(ctx context.Context, meta TaskMetadata, err error) {
+		fmt.Println("Task failed:", meta, err)
+	}
+
+  // ... elsewhere in your codebase
+  manager.Run(context.Background(), "goroutine-1", func(ctx context.Context) error {
 		// Do some work here
 		return nil
 	})
 
-	// Define some monitoring functions for logging or error reporting
-	manager.OnTaskAdded = func(ctx context.Context, meta BackgroundMeta) {
-		fmt.Println("Task added:", meta)
-	}
-	manager.OnTaskSucceeded = func(ctx context.Context, meta BackgroundMeta) {
-		fmt.Println("Task succeeded:", meta)
-	}
-	manager.OnTaskFailed = func(ctx context.Context, meta BackgroundMeta, err error) {
-		fmt.Println("Task failed:", meta, err)
-	}
 
 	// Wait for all goroutines to finish
 	// Make sure you stop your components from adding more tasks
