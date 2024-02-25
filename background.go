@@ -3,6 +3,7 @@ package background
 import (
 	"context"
 	"sync"
+	"time"
 )
 
 // Manager keeps track of scheduled goroutines and provides mechanisms to wait for them to finish. `Meta` is whatever
@@ -18,13 +19,18 @@ type Manager[Meta any] struct {
 	wg  sync.WaitGroup
 	len int
 
-	// OnTaskAdded is called immediately after calling Run(). You can use this for logging, metrics or other purposes.
+	// StalledThreshold is the amount of time within which the goroutine should return before it is considered stalled.
+	StalledThreshold time.Duration
+
+	// OnTaskAdded is called immediately after calling Run().
 	OnTaskAdded func(ctx context.Context, meta Meta)
-	// OnTaskSucceeded is called immediately after Task returns. You can use this for logging, metrics or other purposes.
+	// OnTaskSucceeded is called immediately after Task returns.
 	OnTaskSucceeded func(ctx context.Context, meta Meta)
-	// OnTaskFailed is called immediately after Task returns with an error. You can use this for logging, metrics or other
-	// purposes.
+	// OnTaskFailed is called immediately after Task returns with an error.
 	OnTaskFailed func(ctx context.Context, meta Meta, err error)
+	// OnGoroutineStalled is called when the goroutine does not return within the StalledThreshold. You can use this to
+	// make sure your goroutines do not take excessive amounts of time to run to completion.
+	OnGoroutineStalled func(ctx context.Context, meta Meta)
 }
 
 // Task is the function to be executed in a goroutine
@@ -41,7 +47,12 @@ func (m *Manager[Meta]) Run(ctx context.Context, meta Meta, task Task) {
 	m.callOnTaskAdded(ctx, meta)
 	m.wg.Add(1)
 	m.len++
-	go m.run(context.WithoutCancel(ctx), meta, task)
+
+	ctx = context.WithoutCancel(ctx)
+	done := make(chan bool, 1)
+
+	go m.run(ctx, meta, task, done)
+	go m.ticktock(ctx, meta, done)
 }
 
 // Wait blocks until all scheduled tasks have finished.
@@ -54,18 +65,27 @@ func (m *Manager[Meta]) Len() int {
 	return m.len
 }
 
-func (m *Manager[Meta]) run(ctx context.Context, meta Meta, task Task) {
-	defer func() {
-		m.wg.Done()
-		m.len--
-	}()
-
+func (m *Manager[Meta]) run(ctx context.Context, meta Meta, task Task, done chan<- bool) {
 	err := task(ctx)
+	done <- true
+	m.wg.Done()
+	m.len--
 
 	if err != nil {
 		m.callOnTaskFailed(ctx, meta, err)
 	} else {
 		m.callOnTaskSucceeded(ctx, meta)
+	}
+}
+
+func (m *Manager[Meta]) ticktock(ctx context.Context, meta Meta, done <-chan bool) {
+	timeout := mktimeout(m.StalledThreshold)
+	select {
+	case <-done:
+		return
+	case <-timeout:
+		m.callOnGoroutineStalled(ctx, meta)
+		return
 	}
 }
 
@@ -85,4 +105,19 @@ func (m *Manager[Meta]) callOnTaskAdded(ctx context.Context, meta Meta) {
 	if m.OnTaskAdded != nil {
 		m.OnTaskAdded(ctx, meta)
 	}
+}
+
+func (m *Manager[Meta]) callOnGoroutineStalled(ctx context.Context, meta Meta) {
+	if m.OnGoroutineStalled != nil {
+		m.OnGoroutineStalled(ctx, meta)
+	}
+}
+
+// mktimeout returns a channel that will receive the current time after the specified duration. If the duration is 0,
+// the channel will never receive any message.
+func mktimeout(duration time.Duration) <-chan time.Time {
+	if duration == 0 {
+		return make(<-chan time.Time)
+	}
+	return time.After(duration)
 }

@@ -2,7 +2,10 @@ package background_test
 
 import (
 	"context"
+	"fmt"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"go.strv.io/background"
@@ -12,9 +15,11 @@ func Test_New(t *testing.T) {
 	m := background.NewManager[bool]()
 	assert.NotNil(t, m)
 	assert.IsType(t, &background.Manager[bool]{}, m)
+	assert.Equal(t, m.StalledThreshold, time.Duration(0))
 	assert.Nil(t, m.OnTaskAdded)
 	assert.Nil(t, m.OnTaskSucceeded)
 	assert.Nil(t, m.OnTaskFailed)
+	assert.Nil(t, m.OnGoroutineStalled)
 }
 
 func Test_RunExecutesInGoroutine(t *testing.T) {
@@ -81,8 +86,8 @@ func Test_Len(t *testing.T) {
 	remaining := 10
 
 	m.OnTaskSucceeded = func(ctx context.Context, meta bool) {
-		assert.Equal(t, remaining, m.Len())
 		remaining--
+		assert.Equal(t, remaining, m.Len())
 		proceed <- true
 	}
 
@@ -146,6 +151,63 @@ func Test_OnTaskFailed(t *testing.T) {
 	m.Run(context.Background(), metaval, func(ctx context.Context) error {
 		return assert.AnError
 	})
+	m.Wait()
+	assert.True(t, executed)
+}
+
+func Test_OnGoroutineStalled(t *testing.T) {
+	tests := []struct {
+		duration      time.Duration
+		shouldExecute bool
+	}{
+		{time.Duration(1 * time.Millisecond), false},
+		{time.Duration(3 * time.Millisecond), false},
+		{time.Duration(6 * time.Millisecond), true},
+		{time.Duration(7 * time.Millisecond), true},
+	}
+
+	for _, test := range tests {
+		m := background.NewManager[bool]()
+		m.StalledThreshold = time.Millisecond * 5
+
+		t.Run(fmt.Sprintf("duration of %s)", test.duration.String()), func(t *testing.T) {
+			var wg sync.WaitGroup
+			executed := false
+			if test.shouldExecute == true {
+				wg.Add(1)
+			}
+
+			m.OnGoroutineStalled = func(ctx context.Context, meta bool) {
+				executed = true
+				wg.Done()
+			}
+
+			m.Run(context.Background(), true, func(ctx context.Context) error {
+				<-time.After(test.duration)
+				return nil
+			})
+
+			wg.Wait()
+			m.Wait()
+			assert.Equal(t, test.shouldExecute, executed)
+		})
+	}
+}
+
+func Test_StalledGoroutineStillCallsOnTaskSucceeded(t *testing.T) {
+	m := background.NewManager[bool]()
+	m.StalledThreshold = time.Millisecond
+	executed := false
+
+	m.OnTaskSucceeded = func(ctx context.Context, meta bool) {
+		executed = true
+	}
+
+	m.Run(context.Background(), true, func(ctx context.Context) error {
+		<-time.After(time.Millisecond * 3)
+		return nil
+	})
+
 	m.Wait()
 	assert.True(t, executed)
 }
