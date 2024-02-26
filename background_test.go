@@ -3,6 +3,7 @@ package background_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"go.strv.io/background"
@@ -15,6 +16,17 @@ func Test_New(t *testing.T) {
 	assert.Nil(t, m.OnTaskAdded)
 	assert.Nil(t, m.OnTaskSucceeded)
 	assert.Nil(t, m.OnTaskFailed)
+	assert.Nil(t, m.OnMaxDurationExceeded)
+}
+
+func Test_NewWithMaxDuration(t *testing.T) {
+	m := background.NewManagerWithMaxDuration[bool](0)
+	assert.NotNil(t, m)
+	assert.IsType(t, &background.Manager[bool]{}, m)
+	assert.Nil(t, m.OnTaskAdded)
+	assert.Nil(t, m.OnTaskSucceeded)
+	assert.Nil(t, m.OnTaskFailed)
+	assert.Nil(t, m.OnMaxDurationExceeded)
 }
 
 func Test_RunExecutesInGoroutine(t *testing.T) {
@@ -146,6 +158,27 @@ func Test_OnTaskFailed(t *testing.T) {
 	m.Run(context.Background(), metaval, func(ctx context.Context) error {
 		return assert.AnError
 	})
+	m.Wait()
+	assert.True(t, executed)
+}
+
+func Test_OnMaxDurationExceeded(t *testing.T) {
+	m := background.NewManagerWithMaxDuration[bool](time.Second)
+	proceed := make(chan bool)
+	metaval := true
+	executed := false
+
+	m.OnMaxDurationExceeded = func(ctx context.Context, meta bool) {
+		assert.Equal(t, metaval, meta)
+		executed = true
+		proceed <- true
+	}
+
+	m.Run(context.Background(), metaval, func(ctx context.Context) error {
+		<-proceed
+		return nil
+	})
+
 	m.Wait()
 	assert.True(t, executed)
 }

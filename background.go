@@ -3,6 +3,12 @@ package background
 import (
 	"context"
 	"sync"
+	"sync/atomic"
+	"time"
+)
+
+var (
+	DefaultMaxDuration time.Duration = 0
 )
 
 // Manager keeps track of scheduled goroutines and provides mechanisms to wait for them to finish. `Meta` is whatever
@@ -15,8 +21,9 @@ import (
 // package to schedule the queue jobs without the customer waiting for that to happen while at the same time being able
 // to wait for all those goroutines to finish before allowing the process to exit.
 type Manager[Meta any] struct {
-	wg  sync.WaitGroup
-	len int
+	wg          sync.WaitGroup
+	len         atomic.Int32
+	maxDuration time.Duration
 
 	// OnTaskAdded is called immediately after calling Run(). You can use this for logging, metrics or other purposes.
 	OnTaskAdded func(ctx context.Context, meta Meta)
@@ -25,6 +32,9 @@ type Manager[Meta any] struct {
 	// OnTaskFailed is called immediately after Task returns with an error. You can use this for logging, metrics or other
 	// purposes.
 	OnTaskFailed func(ctx context.Context, meta Meta, err error)
+	// OnMaxDurationExceeded is called immediately after maxDuration. You can use this for logging, metrics or other
+	// purposes.
+	OnMaxDurationExceeded func(ctx context.Context, meta Meta)
 }
 
 // Task is the function to be executed in a goroutine
@@ -32,7 +42,12 @@ type Task func(ctx context.Context) error
 
 // NewManager creates a new instance of Manager with the provided generic type for the metadata argument.
 func NewManager[Meta any]() *Manager[Meta] {
-	return &Manager[Meta]{}
+	return NewManagerWithMaxDuration[Meta](DefaultMaxDuration)
+}
+
+// NewManagerWithMaxDuration creates a new instance of Manager with the provided maximum duration.
+func NewManagerWithMaxDuration[Meta any](duration time.Duration) *Manager[Meta] {
+	return &Manager[Meta]{maxDuration: duration}
 }
 
 // Run schedules the provided task to be executed in a goroutine. `Meta` is whatever you wish to associate with the
@@ -40,8 +55,8 @@ func NewManager[Meta any]() *Manager[Meta] {
 func (m *Manager[Meta]) Run(ctx context.Context, meta Meta, task Task) {
 	m.callOnTaskAdded(ctx, meta)
 	m.wg.Add(1)
-	m.len++
-	go m.run(context.WithoutCancel(ctx), meta, task)
+	m.len.Add(1)
+	go m.run(ctx, meta, task)
 }
 
 // Wait blocks until all scheduled tasks have finished.
@@ -51,21 +66,41 @@ func (m *Manager[Meta]) Wait() {
 
 // Len returns the number of currently running tasks
 func (m *Manager[Meta]) Len() int {
-	return m.len
+	return int(m.len.Load())
 }
 
 func (m *Manager[Meta]) run(ctx context.Context, meta Meta, task Task) {
 	defer func() {
 		m.wg.Done()
-		m.len--
+		m.len.Add(-1)
 	}()
 
-	err := task(ctx)
+	var cancel context.CancelFunc
+	if m.maxDuration != DefaultMaxDuration {
+		ctx, cancel = context.WithTimeout(ctx, m.maxDuration)
+		defer cancel()
+	}
 
-	if err != nil {
-		m.callOnTaskFailed(ctx, meta, err)
-	} else {
+	success := make(chan struct{})
+	failed := make(chan error)
+	timeout := ctx.Done()
+
+	go func(c context.Context, s chan struct{}, f chan error) {
+		err := task(ctx)
+		if err != nil {
+			f <- err
+			return
+		}
+		s <- struct{}{}
+	}(ctx, success, failed)
+
+	select {
+	case <-timeout:
+		m.callOnMaxDurationExceeded(ctx, meta)
+	case <-success:
 		m.callOnTaskSucceeded(ctx, meta)
+	case err := <-failed:
+		m.callOnTaskFailed(ctx, meta, err)
 	}
 }
 
@@ -84,5 +119,11 @@ func (m *Manager[Meta]) callOnTaskSucceeded(ctx context.Context, meta Meta) {
 func (m *Manager[Meta]) callOnTaskAdded(ctx context.Context, meta Meta) {
 	if m.OnTaskAdded != nil {
 		m.OnTaskAdded(ctx, meta)
+	}
+}
+
+func (m *Manager[Meta]) callOnMaxDurationExceeded(ctx context.Context, meta Meta) {
+	if m.OnMaxDurationExceeded != nil {
+		m.OnMaxDurationExceeded(ctx, meta)
 	}
 }
