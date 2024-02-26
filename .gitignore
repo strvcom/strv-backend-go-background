@@ -16,3 +16,23 @@ coverage.txt
 **/*.bkp
 **/*.log
 **/*.tmp
+
+# Environment
+.env
+.env.test
+.secret
+
+# Go modules
+go.work
+go.work.sum
+
+# IDE
+.idea/
+.vscode/
+
+# Debug
+__debug*
+*.log
+
+# Playground
+./playground.go
