@@ -2,149 +2,202 @@ package manager
 
 import (
 	"context"
+	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
 
-func Test_New(t *testing.T) {
-	m := New[bool]()
-	assert.NotNil(t, m)
-	assert.IsType(t, &Manager[bool]{}, m)
-	assert.Nil(t, m.OnTaskAdded)
-	assert.Nil(t, m.OnTaskSucceeded)
-	assert.Nil(t, m.OnTaskFailed)
-}
-
-func Test_RunExecutesInGoroutine(t *testing.T) {
-	m := New[bool]()
-	proceed := make(chan bool, 1)
-
-	m.Run(context.Background(), true, func(ctx context.Context) error {
-		// Let the main thread advance a bit
-		<-proceed
-		proceed <- true
-		return nil
-	})
-
-	// If the func is not executed in a goroutine the main thread will not be able to advance and the test will time out
-	assert.Empty(t, proceed)
-	proceed <- true
-	m.Wait()
-	assert.True(t, <-proceed)
-}
-
-func Test_WaitWaitsForPendingTasks(t *testing.T) {
-	m := New[bool]()
-	proceed := make(chan bool, 1)
-	done := make(chan bool, 1)
-	var waited bool
-
-	m.Run(context.Background(), true, func(ctx context.Context) error {
-		// Let the main thread advance a bit
-		<-proceed
-		return nil
-	})
-
-	go func() {
-		m.Wait()
-		waited = true
-		done <- true
-	}()
-
-	assert.False(t, waited)
-	proceed <- true
-	<-done
-	assert.True(t, waited)
-}
-
-func Test_CancelledParentContext(t *testing.T) {
-	m := New[bool]()
-	ctx, cancel := context.WithCancel(context.Background())
-	proceed := make(chan bool, 1)
-
-	m.Run(ctx, true, func(ctx context.Context) error {
-		<-proceed
-		assert.Nil(t, ctx.Err())
-		return nil
-	})
-
-	cancel()
-	proceed <- true
-	m.Wait()
-}
-
-func Test_Len(t *testing.T) {
-	m := New[bool]()
-	proceed := make(chan bool, 1)
-	remaining := 10
-
-	m.OnTaskSucceeded = func(ctx context.Context, meta bool) {
-		assert.Equal(t, remaining, m.Len())
-		remaining--
-		proceed <- true
+func TestNew(t *testing.T) {
+	ctx := context.Background()
+	type args struct {
+		ctx  context.Context
+		opts []Option
 	}
-
-	for range 10 {
-		m.Run(context.Background(), true, func(ctx context.Context) error {
-			<-proceed
-			return nil
+	tests := []struct {
+		name string
+		args args
+	}{
+		{
+			name: "pass",
+			args: args{
+				ctx: ctx,
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := New(tt.args.ctx, tt.args.opts...)
+			assert.NotNil(t, m)
+			assert.Equal(t, 0, m.stat.RunningTasks)
+			assert.Nil(t, m.retrier)
 		})
 	}
-
-	proceed <- true
-	m.Wait()
-	assert.Equal(t, 0, m.Len())
 }
 
-func Test_OnTaskAdded(t *testing.T) {
-	m := New[bool]()
-	metaval := true
-	executed := false
-
-	m.OnTaskAdded = func(ctx context.Context, meta bool) {
-		assert.Equal(t, metaval, meta)
-		executed = true
+func TestNewWithRetry(t *testing.T) {
+	ctx := context.Background()
+	type args struct {
+		ctx  context.Context
+		opts []Option
 	}
-
-	m.Run(context.Background(), metaval, func(ctx context.Context) error {
-		return nil
-	})
-	m.Wait()
-	assert.True(t, executed)
+	tests := []struct {
+		name string
+		args args
+	}{
+		{
+			name: "pass:with-constant-retry",
+			args: args{
+				ctx: ctx,
+				opts: []Option{
+					WithConstantRetry(5, 1*time.Second),
+				},
+			},
+		},
+		{
+			name: "pass:with-expotential-retry",
+			args: args{
+				ctx: ctx,
+				opts: []Option{
+					WithExpotentialRetry(5, 250*time.Second, 1*time.Second),
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := New(tt.args.ctx, tt.args.opts...)
+			assert.NotNil(t, m)
+			assert.NotNil(t, m.retrier)
+		})
+	}
 }
 
-func Test_OnTaskSucceeded(t *testing.T) {
-	m := New[bool]()
-	metaval := true
-	executed := false
-
-	m.OnTaskSucceeded = func(ctx context.Context, meta bool) {
-		assert.Equal(t, metaval, meta)
-		executed = true
+func TestRunWithRetry(t *testing.T) {
+	expectedAttempts := 5
+	ctx := context.Background()
+	type args struct {
+		ctx  context.Context
+		opts []Option
 	}
-
-	m.Run(context.Background(), metaval, func(ctx context.Context) error {
-		return nil
-	})
-	m.Wait()
-	assert.True(t, executed)
+	tests := []struct {
+		name string
+		args args
+	}{
+		{
+			name: "pass:with-constant-retry",
+			args: args{
+				ctx: ctx,
+				opts: []Option{
+					WithConstantRetry(5, 1*time.Second),
+				},
+			},
+		},
+		{
+			name: "pass:with-expotential-retry",
+			args: args{
+				ctx: ctx,
+				opts: []Option{
+					WithExpotentialRetry(5, 250*time.Second, 1*time.Second),
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := New(tt.args.ctx, tt.args.opts...)
+			assert.NotNil(t, m)
+			assert.NotNil(t, m.retrier)
+			nRuns := -1
+			m.Run(func(ctx context.Context) error {
+				nRuns++
+				<-time.After(1 * time.Second)
+				return errors.New("test")
+			})
+			assert.Equal(t, 1, m.stat.RunningTasks)
+			err := m.Wait()
+			assert.Error(t, err)
+			assert.ErrorContains(t, err, "test")
+			assert.Equal(t, expectedAttempts, nRuns)
+		})
+	}
 }
 
-func Test_OnTaskFailed(t *testing.T) {
-	m := New[bool]()
-	metaval := true
-	executed := false
-
-	m.OnTaskFailed = func(ctx context.Context, meta bool, err error) {
-		assert.Equal(t, metaval, meta)
-		assert.Error(t, err)
-		executed = true
+func TestContextCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	type args struct {
+		ctx  context.Context
+		opts []Option
 	}
+	tests := []struct {
+		name string
+		args args
+	}{
+		{
+			name: "pass",
+			args: args{
+				ctx: ctx,
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := New(tt.args.ctx, tt.args.opts...)
+			assert.NotNil(t, m)
+			m.Run(func(ctx context.Context) error {
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-time.After(5 * time.Second):
+					return errors.New("timeout")
+				}
+			})
+			assert.Equal(t, 1, m.stat.RunningTasks)
+			go time.AfterFunc(1*time.Second, func() {
+				cancel()
+			})
+			err := m.Wait()
+			assert.NotNil(t, err)
+			assert.ErrorContains(t, err, "context canceled")
+			assert.Equal(t, 0, m.stat.RunningTasks)
+		})
+	}
+}
 
-	m.Run(context.Background(), metaval, func(ctx context.Context) error {
-		return assert.AnError
-	})
-	m.Wait()
-	assert.True(t, executed)
+func TestStop(t *testing.T) {
+	type args struct {
+		ctx  context.Context
+		opts []Option
+	}
+	tests := []struct {
+		name string
+		args args
+	}{
+		{
+			name: "pass",
+			args: args{
+				ctx: context.Background(),
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := New(tt.args.ctx, tt.args.opts...)
+			assert.NotNil(t, m)
+			m.Run(func(ctx context.Context) error {
+				select {
+				case <-ctx.Done():
+				case <-time.After(1 * time.Second):
+					return errors.New("timeout")
+				}
+				return nil
+			})
+			assert.Equal(t, 1, m.stat.RunningTasks)
+			err := m.Stop()
+			assert.Nil(t, err)
+			assert.Equal(t, 0, m.stat.RunningTasks)
+		})
+	}
 }

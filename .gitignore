@@ -35,4 +35,4 @@ __debug*
 *.log
 
 # Playground
-./playground.go
+playground.go
