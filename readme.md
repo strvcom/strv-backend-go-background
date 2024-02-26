@@ -6,11 +6,11 @@
 
 ## Purpose
 
-In Go, when the `main` function returns, any pending goroutines are terminated. This means that we need to keep track of them somehow so that `main` can wait for them to finish before returning. This is also useful in the context of servers - when the server receives a terminating signal from the host OS (ie. due to a new release being deployed) the application needs a way to delay the shutdown long enough for the goroutines to finish before allowing itself to be terminated.
+In a Go application, there's often the need for background goroutines. These goroutines can be used for various purposes, but this library is focused on managing goroutines that are used for background tasks with nearly infinite lifetimes. These tasks are often used for things like periodic cleanup, background processing, or long-running connections.
 
-This library makes that management process easier and adds some extra functionality on top, for good measure.
+This library makes that management process easier by combining the retrier resiliency pattern implemented by the [eapache/go-resiliency](https://github.com/eapache/go-resiliency) package with a pooler from the wonderful [sourcegraph/conc](https://github.com/sourcegraph/conc) library.
 
-> ⚠️ By no means is this a replacement for proper job queue system! The intended use case is for small, relatively fast functions that either do the actual work or schedule a job in some kind of a queue to do that work. Since even putting a job into a queue takes some time, you can remove that time from the client's request/response cycle and make your backend respond faster.
+A typical example in production code might be a background task that periodically checks for new data in a queue and processes it. When the application is shutting down, it's important to wait for all these background tasks to finish before the process exits. This library provides a way to do that and a bit more on top of it.
 
 ## Installation
 
@@ -27,40 +27,42 @@ import (
 	"context"
 	"fmt"
 
-	"go.strv.io/background"
-)
-
-// Define a type for the metadata that you want to associate with your tasks.
-// The metadata is provided by the caller when a task is scheduled and is passed
-// to the monitoring functions.
-type TaskMetadata string
+	"go.strv.io/background/manager"
 
 func main() {
-	// Create a new background manager
-	manager := background.NewManager[TaskMetadata]()
-	// Define some monitoring functions for logging or error reporting
-	manager.OnTaskAdded = func(ctx context.Context, meta TaskMetadata) {
-		fmt.Println("Task added:", meta)
+	ctx := context.Background()
+	// Create a new manager.
+	// The manager will cancel its context and all its tasks if any of the tasks returns an error.
+	// The manager will return the first error encountered by any of its tasks.
+	backgroundManager := manager.New(ctx, manager.WithCancelOnError(), manager.WithFirstError())
+	//nolint
+	backgroundManager.Run(
+		func(ctx context.Context) error {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(2 * time.Second):
+				// Fail after 2 seconds.
+				return context.DeadlineExceeded
+			}
+		},
+	)
+	backgroundManager.Run(
+		func(ctx context.Context) error {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(5 * time.Second):
+				fmt.Printf("This won't be executed\n")
+			}
+		},
+	)
+	if err := backgroundManager.Wait(); err != nil {
+		//nolint
+		fmt.Printf("Error: %v\n", err) // Output: Error: context deadline exceeded
 	}
-	manager.OnTaskSucceeded = func(ctx context.Context, meta TaskMetadata) {
-		fmt.Println("Task succeeded:", meta)
-	}
-	manager.OnTaskFailed = func(ctx context.Context, meta TaskMetadata, err error) {
-		fmt.Println("Task failed:", meta, err)
-	}
+)
 
-  // ... elsewhere in your codebase
-  manager.Run(context.Background(), "goroutine-1", func(ctx context.Context) error {
-		// Do some work here
-		return nil
-	})
-
-
-	// Wait for all goroutines to finish
-	// Make sure you stop your components from adding more tasks
-	manager.Wait()
-	// Now it's safe to terminate the process
-}
 ```
 
 ## License
