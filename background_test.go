@@ -160,10 +160,10 @@ func Test_OnGoroutineStalled(t *testing.T) {
 		duration      time.Duration
 		shouldExecute bool
 	}{
-		{time.Duration(1 * time.Millisecond), false},
-		{time.Duration(3 * time.Millisecond), false},
-		{time.Duration(6 * time.Millisecond), true},
-		{time.Duration(7 * time.Millisecond), true},
+		{1 * time.Millisecond, false},
+		{3 * time.Millisecond, false},
+		{6 * time.Millisecond, true},
+		{7 * time.Millisecond, true},
 	}
 
 	for _, test := range tests {
