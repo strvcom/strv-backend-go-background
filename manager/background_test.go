@@ -1,24 +1,23 @@
-package background_test
+package manager
 
 import (
 	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"go.strv.io/background"
 )
 
 func Test_New(t *testing.T) {
-	m := background.NewManager[bool]()
+	m := New[bool]()
 	assert.NotNil(t, m)
-	assert.IsType(t, &background.Manager[bool]{}, m)
+	assert.IsType(t, &Manager[bool]{}, m)
 	assert.Nil(t, m.OnTaskAdded)
 	assert.Nil(t, m.OnTaskSucceeded)
 	assert.Nil(t, m.OnTaskFailed)
 }
 
 func Test_RunExecutesInGoroutine(t *testing.T) {
-	m := background.NewManager[bool]()
+	m := New[bool]()
 	proceed := make(chan bool, 1)
 
 	m.Run(context.Background(), true, func(ctx context.Context) error {
@@ -36,7 +35,7 @@ func Test_RunExecutesInGoroutine(t *testing.T) {
 }
 
 func Test_WaitWaitsForPendingTasks(t *testing.T) {
-	m := background.NewManager[bool]()
+	m := New[bool]()
 	proceed := make(chan bool, 1)
 	done := make(chan bool, 1)
 	var waited bool
@@ -60,7 +59,7 @@ func Test_WaitWaitsForPendingTasks(t *testing.T) {
 }
 
 func Test_CancelledParentContext(t *testing.T) {
-	m := background.NewManager[bool]()
+	m := New[bool]()
 	ctx, cancel := context.WithCancel(context.Background())
 	proceed := make(chan bool, 1)
 
@@ -76,7 +75,7 @@ func Test_CancelledParentContext(t *testing.T) {
 }
 
 func Test_Len(t *testing.T) {
-	m := background.NewManager[bool]()
+	m := New[bool]()
 	proceed := make(chan bool, 1)
 	remaining := 10
 
@@ -99,7 +98,7 @@ func Test_Len(t *testing.T) {
 }
 
 func Test_OnTaskAdded(t *testing.T) {
-	m := background.NewManager[bool]()
+	m := New[bool]()
 	metaval := true
 	executed := false
 
@@ -116,7 +115,7 @@ func Test_OnTaskAdded(t *testing.T) {
 }
 
 func Test_OnTaskSucceeded(t *testing.T) {
-	m := background.NewManager[bool]()
+	m := New[bool]()
 	metaval := true
 	executed := false
 
@@ -133,7 +132,7 @@ func Test_OnTaskSucceeded(t *testing.T) {
 }
 
 func Test_OnTaskFailed(t *testing.T) {
-	m := background.NewManager[bool]()
+	m := New[bool]()
 	metaval := true
 	executed := false
 

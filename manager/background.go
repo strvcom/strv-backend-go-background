@@ -1,4 +1,4 @@
-package background
+package manager
 
 import (
 	"context"
@@ -31,7 +31,7 @@ type Manager[Meta any] struct {
 type Task func(ctx context.Context) error
 
 // NewManager creates a new instance of Manager with the provided generic type for the metadata argument.
-func NewManager[Meta any]() *Manager[Meta] {
+func New[Meta any]() *Manager[Meta] {
 	return &Manager[Meta]{}
 }
 
