@@ -3,6 +3,7 @@ package background
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/kamilsk/retry/v5"
@@ -20,7 +21,7 @@ import (
 // to wait for all those goroutines to finish before allowing the process to exit.
 type Manager struct {
 	wg               sync.WaitGroup
-	len              int
+	len              atomic.Int32
 	stalledThreshold time.Duration
 	observer         Observer
 	retry            Retry
@@ -87,12 +88,12 @@ func (m *Manager) Run(ctx context.Context, fn Fn) {
 func (m *Manager) RunTask(ctx context.Context, task Task) {
 	m.observer.callOnTaskAdded(ctx, task)
 	m.wg.Add(1)
-	m.len++
+	m.len.Add(1)
 
 	ctx = context.WithoutCancel(ctx)
-	done := make(chan bool, 1)
+	done := make(chan error, 1)
 
-	go m.ticktock(ctx, task, done)
+	go m.monitor(ctx, task, done)
 	go m.run(ctx, task, done)
 }
 
@@ -102,31 +103,32 @@ func (m *Manager) Wait() {
 }
 
 // Len returns the number of currently running tasks.
-func (m *Manager) Len() int {
-	return m.len
+func (m *Manager) Len() int32 {
+	return m.len.Load()
 }
 
-func (m *Manager) run(ctx context.Context, task Task, done chan<- bool) {
+func (m *Manager) run(ctx context.Context, task Task, done chan<- error) {
 	strategies := mkstrategies(m.retry, task.Retry)
-	err := retry.Do(ctx, task.Fn, strategies...)
-	done <- true
-	m.wg.Done()
-	m.len--
-
-	if err != nil {
-		m.observer.callOnTaskFailed(ctx, task, err)
-	} else {
-		m.observer.callOnTaskSucceeded(ctx, task)
-	}
+	done <- retry.Do(ctx, task.Fn, strategies...)
 }
 
-func (m *Manager) ticktock(ctx context.Context, task Task, done <-chan bool) {
+func (m *Manager) monitor(ctx context.Context, task Task, done <-chan error) {
 	timeout := mktimeout(m.stalledThreshold)
-	select {
-	case <-done:
-		return
-	case <-timeout:
-		m.observer.callOnTaskStalled(ctx, task)
-		return
+
+	for {
+		select {
+		case <-timeout:
+			m.observer.callOnTaskStalled(ctx, task)
+		case err := <-done:
+			if err != nil {
+				m.observer.callOnTaskFailed(ctx, task, err)
+			} else {
+				m.observer.callOnTaskSucceeded(ctx, task)
+			}
+
+			m.wg.Done()
+			m.len.Add(-1)
+			return
+		}
 	}
 }

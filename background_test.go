@@ -16,7 +16,7 @@ func Test_NewManager(t *testing.T) {
 	m := background.NewManager()
 	assert.NotNil(t, m)
 	assert.IsType(t, &background.Manager{}, m)
-	assert.Equal(t, 0, m.Len())
+	assert.EqualValues(t, 0, m.Len())
 }
 
 func Test_RunExecutesInGoroutine(t *testing.T) {
@@ -98,7 +98,7 @@ func Test_Len(t *testing.T) {
 
 	proceed <- true
 	m.Wait()
-	assert.Equal(t, 0, m.Len())
+	assert.EqualValues(t, 0, m.Len())
 }
 
 func Test_OnTaskAdded(t *testing.T) {
