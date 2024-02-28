@@ -16,15 +16,28 @@ import (
 // package to schedule the queue jobs without the customer waiting for that to happen while at the same time being able
 // to wait for all those goroutines to finish before allowing the process to exit.
 type Manager[Meta any] struct {
-	wg  sync.WaitGroup
-	len int
+	wg               sync.WaitGroup
+	len              int
+	stalledThreshold time.Duration
+	hooks            Hooks[Meta]
+}
 
+// Options provides a means for configuring the background manager and attaching hooks to it.
+type Options[Meta any] struct {
 	// StalledThreshold is the amount of time within which the goroutine should return before it is considered stalled.
+	// Note that no effort is made to actually kill the goroutine.
 	StalledThreshold time.Duration
+	// Hooks allow you to register monitoring functions that are called when something happens with the goroutines that
+	// you schedule. These are useful for logging, monitoring, etc.
+	Hooks Hooks[Meta]
+}
 
+// Hooks are a set of functions that are called when certain events happen with the goroutines that you schedule. All of
+// them are optional; implement only those you need.
+type Hooks[Meta any] struct {
 	// OnTaskAdded is called immediately after calling Run().
 	OnTaskAdded func(ctx context.Context, meta Meta)
-	// OnTaskSucceeded is called immediately after Task returns.
+	// OnTaskSucceeded is called immediately after Task returns with no error.
 	OnTaskSucceeded func(ctx context.Context, meta Meta)
 	// OnTaskFailed is called immediately after Task returns with an error.
 	OnTaskFailed func(ctx context.Context, meta Meta, err error)
@@ -36,9 +49,20 @@ type Manager[Meta any] struct {
 // Task is the function to be executed in a goroutine
 type Task func(ctx context.Context) error
 
-// NewManager creates a new instance of Manager with the provided generic type for the metadata argument.
-func NewManager[Meta any]() *Manager[Meta] {
-	return &Manager[Meta]{}
+// NilMeta is a type that can be used as Meta generic type when you do not need to associate any metadata with the task.
+type NilMeta *struct{}
+
+// NewManager creates a new instance of Manager with default options and no hooks.
+func NewManager() *Manager[NilMeta] {
+	return &Manager[NilMeta]{}
+}
+
+// NewManagerWithOptions creates a new instance of Manager with the provided options and hooks.
+func NewManagerWithOptions[Meta any](options Options[Meta]) *Manager[Meta] {
+	return &Manager[Meta]{
+		stalledThreshold: options.StalledThreshold,
+		hooks:            options.Hooks,
+	}
 }
 
 // Run schedules the provided task to be executed in a goroutine. `Meta` is whatever you wish to associate with the
@@ -60,7 +84,7 @@ func (m *Manager[Meta]) Wait() {
 	m.wg.Wait()
 }
 
-// Len returns the number of currently running tasks
+// Len returns the number of currently running tasks.
 func (m *Manager[Meta]) Len() int {
 	return m.len
 }
@@ -79,7 +103,7 @@ func (m *Manager[Meta]) run(ctx context.Context, meta Meta, task Task, done chan
 }
 
 func (m *Manager[Meta]) ticktock(ctx context.Context, meta Meta, done <-chan bool) {
-	timeout := mktimeout(m.StalledThreshold)
+	timeout := mktimeout(m.stalledThreshold)
 	select {
 	case <-done:
 		return
@@ -90,26 +114,26 @@ func (m *Manager[Meta]) ticktock(ctx context.Context, meta Meta, done <-chan boo
 }
 
 func (m *Manager[Meta]) callOnTaskFailed(ctx context.Context, meta Meta, err error) {
-	if m.OnTaskFailed != nil {
-		m.OnTaskFailed(ctx, meta, err)
+	if m.hooks.OnTaskFailed != nil {
+		m.hooks.OnTaskFailed(ctx, meta, err)
 	}
 }
 
 func (m *Manager[Meta]) callOnTaskSucceeded(ctx context.Context, meta Meta) {
-	if m.OnTaskSucceeded != nil {
-		m.OnTaskSucceeded(ctx, meta)
+	if m.hooks.OnTaskSucceeded != nil {
+		m.hooks.OnTaskSucceeded(ctx, meta)
 	}
 }
 
 func (m *Manager[Meta]) callOnTaskAdded(ctx context.Context, meta Meta) {
-	if m.OnTaskAdded != nil {
-		m.OnTaskAdded(ctx, meta)
+	if m.hooks.OnTaskAdded != nil {
+		m.hooks.OnTaskAdded(ctx, meta)
 	}
 }
 
 func (m *Manager[Meta]) callOnGoroutineStalled(ctx context.Context, meta Meta) {
-	if m.OnGoroutineStalled != nil {
-		m.OnGoroutineStalled(ctx, meta)
+	if m.hooks.OnGoroutineStalled != nil {
+		m.hooks.OnGoroutineStalled(ctx, meta)
 	}
 }
 

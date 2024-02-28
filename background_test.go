@@ -11,22 +11,20 @@ import (
 	"go.strv.io/background"
 )
 
+type testmeta bool
+
 func Test_New(t *testing.T) {
-	m := background.NewManager[bool]()
+	m := background.NewManager()
 	assert.NotNil(t, m)
-	assert.IsType(t, &background.Manager[bool]{}, m)
-	assert.Equal(t, m.StalledThreshold, time.Duration(0))
-	assert.Nil(t, m.OnTaskAdded)
-	assert.Nil(t, m.OnTaskSucceeded)
-	assert.Nil(t, m.OnTaskFailed)
-	assert.Nil(t, m.OnGoroutineStalled)
+	assert.IsType(t, &background.Manager[background.NilMeta]{}, m)
+	assert.Equal(t, 0, m.Len())
 }
 
 func Test_RunExecutesInGoroutine(t *testing.T) {
-	m := background.NewManager[bool]()
+	m := background.NewManager()
 	proceed := make(chan bool, 1)
 
-	m.Run(context.Background(), true, func(ctx context.Context) error {
+	m.Run(context.Background(), nil, func(ctx context.Context) error {
 		// Let the main thread advance a bit
 		<-proceed
 		proceed <- true
@@ -41,12 +39,12 @@ func Test_RunExecutesInGoroutine(t *testing.T) {
 }
 
 func Test_WaitWaitsForPendingTasks(t *testing.T) {
-	m := background.NewManager[bool]()
+	m := background.NewManager()
 	proceed := make(chan bool, 1)
 	done := make(chan bool, 1)
 	var waited bool
 
-	m.Run(context.Background(), true, func(ctx context.Context) error {
+	m.Run(context.Background(), nil, func(ctx context.Context) error {
 		// Let the main thread advance a bit
 		<-proceed
 		return nil
@@ -65,11 +63,11 @@ func Test_WaitWaitsForPendingTasks(t *testing.T) {
 }
 
 func Test_CancelledParentContext(t *testing.T) {
-	m := background.NewManager[bool]()
+	m := background.NewManager()
 	ctx, cancel := context.WithCancel(context.Background())
 	proceed := make(chan bool, 1)
 
-	m.Run(ctx, true, func(ctx context.Context) error {
+	m.Run(ctx, nil, func(ctx context.Context) error {
 		<-proceed
 		assert.Nil(t, ctx.Err())
 		return nil
@@ -81,15 +79,16 @@ func Test_CancelledParentContext(t *testing.T) {
 }
 
 func Test_Len(t *testing.T) {
-	m := background.NewManager[bool]()
 	proceed := make(chan bool, 1)
 	remaining := 10
-
-	m.OnTaskSucceeded = func(ctx context.Context, meta bool) {
-		remaining--
-		assert.Equal(t, remaining, m.Len())
-		proceed <- true
-	}
+	m := background.NewManagerWithOptions(background.Options[testmeta]{
+		Hooks: background.Hooks[testmeta]{
+			OnTaskSucceeded: func(ctx context.Context, meta testmeta) {
+				remaining--
+				proceed <- true
+			},
+		},
+	})
 
 	for range 10 {
 		m.Run(context.Background(), true, func(ctx context.Context) error {
@@ -104,54 +103,72 @@ func Test_Len(t *testing.T) {
 }
 
 func Test_OnTaskAdded(t *testing.T) {
-	m := background.NewManager[bool]()
-	metaval := true
+	var metaval testmeta = true
 	executed := false
+	var wg sync.WaitGroup
+	m := background.NewManagerWithOptions(background.Options[testmeta]{
+		Hooks: background.Hooks[testmeta]{
+			OnTaskAdded: func(ctx context.Context, meta testmeta) {
+				assert.Equal(t, metaval, meta)
+				executed = true
+				wg.Done()
+			},
+		},
+	})
 
-	m.OnTaskAdded = func(ctx context.Context, meta bool) {
-		assert.Equal(t, metaval, meta)
-		executed = true
-	}
-
+	wg.Add(1)
 	m.Run(context.Background(), metaval, func(ctx context.Context) error {
 		return nil
 	})
-	m.Wait()
+
+	wg.Wait()
 	assert.True(t, executed)
 }
 
 func Test_OnTaskSucceeded(t *testing.T) {
-	m := background.NewManager[bool]()
-	metaval := true
+	var metaval testmeta = true
 	executed := false
+	var wg sync.WaitGroup
+	m := background.NewManagerWithOptions(background.Options[testmeta]{
+		Hooks: background.Hooks[testmeta]{
+			OnTaskSucceeded: func(ctx context.Context, meta testmeta) {
+				assert.Equal(t, metaval, meta)
+				executed = true
+				wg.Done()
+			},
+		},
+	})
 
-	m.OnTaskSucceeded = func(ctx context.Context, meta bool) {
-		assert.Equal(t, metaval, meta)
-		executed = true
-	}
-
+	wg.Add(1)
 	m.Run(context.Background(), metaval, func(ctx context.Context) error {
 		return nil
 	})
-	m.Wait()
+
+	wg.Wait()
 	assert.True(t, executed)
 }
 
 func Test_OnTaskFailed(t *testing.T) {
-	m := background.NewManager[bool]()
-	metaval := true
+	var metaval testmeta = true
 	executed := false
+	var wg sync.WaitGroup
+	m := background.NewManagerWithOptions(background.Options[testmeta]{
+		Hooks: background.Hooks[testmeta]{
+			OnTaskFailed: func(ctx context.Context, meta testmeta, err error) {
+				assert.Equal(t, metaval, meta)
+				assert.Error(t, err)
+				executed = true
+				wg.Done()
+			},
+		},
+	})
 
-	m.OnTaskFailed = func(ctx context.Context, meta bool, err error) {
-		assert.Equal(t, metaval, meta)
-		assert.Error(t, err)
-		executed = true
-	}
-
+	wg.Add(1)
 	m.Run(context.Background(), metaval, func(ctx context.Context) error {
 		return assert.AnError
 	})
-	m.Wait()
+
+	wg.Wait()
 	assert.True(t, executed)
 }
 
@@ -167,47 +184,55 @@ func Test_OnGoroutineStalled(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		m := background.NewManager[bool]()
-		m.StalledThreshold = time.Millisecond * 5
-
 		t.Run(fmt.Sprintf("duration of %s)", test.duration.String()), func(t *testing.T) {
-			var wg sync.WaitGroup
+			var metaval testmeta = true
 			executed := false
+			var wg sync.WaitGroup
 			if test.shouldExecute == true {
 				wg.Add(1)
 			}
 
-			m.OnGoroutineStalled = func(ctx context.Context, meta bool) {
-				executed = true
-				wg.Done()
-			}
+			m := background.NewManagerWithOptions(background.Options[testmeta]{
+				StalledThreshold: time.Millisecond * 5,
+				Hooks: background.Hooks[testmeta]{
+					OnGoroutineStalled: func(ctx context.Context, meta testmeta) {
+						assert.Equal(t, metaval, meta)
+						executed = true
+						wg.Done()
+					},
+				},
+			})
 
-			m.Run(context.Background(), true, func(ctx context.Context) error {
+			m.Run(context.Background(), metaval, func(ctx context.Context) error {
 				<-time.After(test.duration)
 				return nil
 			})
 
 			wg.Wait()
-			m.Wait()
 			assert.Equal(t, test.shouldExecute, executed)
 		})
 	}
 }
 
 func Test_StalledGoroutineStillCallsOnTaskSucceeded(t *testing.T) {
-	m := background.NewManager[bool]()
-	m.StalledThreshold = time.Millisecond
 	executed := false
+	var wg sync.WaitGroup
+	m := background.NewManagerWithOptions(background.Options[testmeta]{
+		StalledThreshold: time.Millisecond,
+		Hooks: background.Hooks[testmeta]{
+			OnTaskSucceeded: func(ctx context.Context, meta testmeta) {
+				executed = true
+				wg.Done()
+			},
+		},
+	})
 
-	m.OnTaskSucceeded = func(ctx context.Context, meta bool) {
-		executed = true
-	}
-
+	wg.Add(1)
 	m.Run(context.Background(), true, func(ctx context.Context) error {
 		<-time.After(time.Millisecond * 3)
 		return nil
 	})
 
-	m.Wait()
+	wg.Wait()
 	assert.True(t, executed)
 }
