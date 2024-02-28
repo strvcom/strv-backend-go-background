@@ -12,7 +12,7 @@ import (
 	"go.strv.io/background"
 )
 
-func Test_New(t *testing.T) {
+func Test_NewManager(t *testing.T) {
 	m := background.NewManager()
 	assert.NotNil(t, m)
 	assert.IsType(t, &background.Manager{}, m)
@@ -81,8 +81,8 @@ func Test_Len(t *testing.T) {
 	proceed := make(chan bool, 1)
 	remaining := 10
 	m := background.NewManagerWithOptions(background.Options{
-		Hooks: background.Hooks{
-			OnTaskSucceeded: func(ctx context.Context, meta background.Metadata) {
+		Observer: background.Observer{
+			OnTaskSucceeded: func(ctx context.Context, task background.Task) {
 				remaining--
 				proceed <- true
 			},
@@ -106,9 +106,9 @@ func Test_OnTaskAdded(t *testing.T) {
 	executed := false
 	var wg sync.WaitGroup
 	m := background.NewManagerWithOptions(background.Options{
-		Hooks: background.Hooks{
-			OnTaskAdded: func(ctx context.Context, meta background.Metadata) {
-				assert.Equal(t, metadata, meta)
+		Observer: background.Observer{
+			OnTaskAdded: func(ctx context.Context, task background.Task) {
+				assert.Equal(t, metadata, task.Meta)
 				executed = true
 				wg.Done()
 			},
@@ -122,7 +122,7 @@ func Test_OnTaskAdded(t *testing.T) {
 		},
 		Meta: metadata,
 	}
-	m.RunTaskDefinition(context.Background(), def)
+	m.RunTask(context.Background(), def)
 
 	wg.Wait()
 	assert.True(t, executed)
@@ -133,9 +133,9 @@ func Test_OnTaskSucceeded(t *testing.T) {
 	executed := false
 	var wg sync.WaitGroup
 	m := background.NewManagerWithOptions(background.Options{
-		Hooks: background.Hooks{
-			OnTaskSucceeded: func(ctx context.Context, meta background.Metadata) {
-				assert.Equal(t, metadata, meta)
+		Observer: background.Observer{
+			OnTaskSucceeded: func(ctx context.Context, task background.Task) {
+				assert.Equal(t, metadata, task.Meta)
 				executed = true
 				wg.Done()
 			},
@@ -149,7 +149,7 @@ func Test_OnTaskSucceeded(t *testing.T) {
 		},
 		Meta: metadata,
 	}
-	m.RunTaskDefinition(context.Background(), def)
+	m.RunTask(context.Background(), def)
 
 	wg.Wait()
 	assert.True(t, executed)
@@ -160,9 +160,9 @@ func Test_OnTaskFailed(t *testing.T) {
 	executed := false
 	var wg sync.WaitGroup
 	m := background.NewManagerWithOptions(background.Options{
-		Hooks: background.Hooks{
-			OnTaskFailed: func(ctx context.Context, meta background.Metadata, err error) {
-				assert.Equal(t, metadata, meta)
+		Observer: background.Observer{
+			OnTaskFailed: func(ctx context.Context, task background.Task, err error) {
+				assert.Equal(t, metadata, task.Meta)
 				assert.Error(t, err)
 				executed = true
 				wg.Done()
@@ -177,7 +177,7 @@ func Test_OnTaskFailed(t *testing.T) {
 		},
 		Meta: metadata,
 	}
-	m.RunTaskDefinition(context.Background(), def)
+	m.RunTask(context.Background(), def)
 
 	wg.Wait()
 	assert.True(t, executed)
@@ -205,9 +205,9 @@ func Test_OnGoroutineStalled(t *testing.T) {
 
 			m := background.NewManagerWithOptions(background.Options{
 				StalledThreshold: time.Millisecond * 5,
-				Hooks: background.Hooks{
-					OnGoroutineStalled: func(ctx context.Context, meta background.Metadata) {
-						assert.Equal(t, metadata, meta)
+				Observer: background.Observer{
+					OnTaskStalled: func(ctx context.Context, task background.Task) {
+						assert.Equal(t, metadata, task.Meta)
 						executed = true
 						wg.Done()
 					},
@@ -221,7 +221,7 @@ func Test_OnGoroutineStalled(t *testing.T) {
 				},
 				Meta: metadata,
 			}
-			m.RunTaskDefinition(context.Background(), def)
+			m.RunTask(context.Background(), def)
 			m.Run(context.Background(), func(ctx context.Context) error {
 				return nil
 			})
@@ -237,8 +237,8 @@ func Test_StalledGoroutineStillCallsOnTaskSucceeded(t *testing.T) {
 	var wg sync.WaitGroup
 	m := background.NewManagerWithOptions(background.Options{
 		StalledThreshold: time.Millisecond,
-		Hooks: background.Hooks{
-			OnTaskSucceeded: func(ctx context.Context, meta background.Metadata) {
+		Observer: background.Observer{
+			OnTaskSucceeded: func(ctx context.Context, task background.Task) {
 				executed = true
 				wg.Done()
 			},
@@ -269,7 +269,7 @@ func Test_TaskDefinitionRetryStrategies(t *testing.T) {
 		},
 	}
 
-	m.RunTaskDefinition(context.Background(), def)
+	m.RunTask(context.Background(), def)
 	m.Wait()
 
 	assert.Equal(t, limit, count)
@@ -279,7 +279,7 @@ func Test_ManagerDefaultRetryStrategies(t *testing.T) {
 	var limit uint = 5
 	var count uint = 0
 	m := background.NewManagerWithOptions(background.Options{
-		DefaultRetry: background.Retry{
+		Retry: background.Retry{
 			strategy.Limit(limit),
 		},
 	})
