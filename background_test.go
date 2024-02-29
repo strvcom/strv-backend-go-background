@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kamilsk/retry/v5/strategy"
 	"github.com/stretchr/testify/assert"
 	"go.strv.io/background"
 )
@@ -24,7 +25,7 @@ func Test_RunExecutesInGoroutine(t *testing.T) {
 	m := background.NewManager()
 	proceed := make(chan bool, 1)
 
-	m.Run(context.Background(), nil, func(ctx context.Context) error {
+	m.Run(context.Background(), func(ctx context.Context) error {
 		// Let the main thread advance a bit
 		<-proceed
 		proceed <- true
@@ -44,7 +45,7 @@ func Test_WaitWaitsForPendingTasks(t *testing.T) {
 	done := make(chan bool, 1)
 	var waited bool
 
-	m.Run(context.Background(), nil, func(ctx context.Context) error {
+	m.Run(context.Background(), func(ctx context.Context) error {
 		// Let the main thread advance a bit
 		<-proceed
 		return nil
@@ -67,7 +68,7 @@ func Test_CancelledParentContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	proceed := make(chan bool, 1)
 
-	m.Run(ctx, nil, func(ctx context.Context) error {
+	m.Run(ctx, func(ctx context.Context) error {
 		<-proceed
 		assert.Nil(t, ctx.Err())
 		return nil
@@ -81,9 +82,9 @@ func Test_CancelledParentContext(t *testing.T) {
 func Test_Len(t *testing.T) {
 	proceed := make(chan bool, 1)
 	remaining := 10
-	m := background.NewManagerWithOptions(background.Options[testmeta]{
-		Hooks: background.Hooks[testmeta]{
-			OnTaskSucceeded: func(ctx context.Context, meta testmeta) {
+	m := background.NewManagerWithOptions(background.Options[background.NilMeta]{
+		Hooks: background.Hooks[background.NilMeta]{
+			OnTaskSucceeded: func(ctx context.Context, meta background.NilMeta) {
 				remaining--
 				proceed <- true
 			},
@@ -91,7 +92,7 @@ func Test_Len(t *testing.T) {
 	})
 
 	for range 10 {
-		m.Run(context.Background(), true, func(ctx context.Context) error {
+		m.Run(context.Background(), func(ctx context.Context) error {
 			<-proceed
 			return nil
 		})
@@ -117,9 +118,13 @@ func Test_OnTaskAdded(t *testing.T) {
 	})
 
 	wg.Add(1)
-	m.Run(context.Background(), metaval, func(ctx context.Context) error {
-		return nil
-	})
+	def := background.TaskDefinition[testmeta]{
+		Task: func(ctx context.Context) error {
+			return nil
+		},
+		Meta: metaval,
+	}
+	m.RunTaskDefinition(context.Background(), def)
 
 	wg.Wait()
 	assert.True(t, executed)
@@ -140,9 +145,13 @@ func Test_OnTaskSucceeded(t *testing.T) {
 	})
 
 	wg.Add(1)
-	m.Run(context.Background(), metaval, func(ctx context.Context) error {
-		return nil
-	})
+	def := background.TaskDefinition[testmeta]{
+		Task: func(ctx context.Context) error {
+			return nil
+		},
+		Meta: metaval,
+	}
+	m.RunTaskDefinition(context.Background(), def)
 
 	wg.Wait()
 	assert.True(t, executed)
@@ -164,9 +173,13 @@ func Test_OnTaskFailed(t *testing.T) {
 	})
 
 	wg.Add(1)
-	m.Run(context.Background(), metaval, func(ctx context.Context) error {
-		return assert.AnError
-	})
+	def := background.TaskDefinition[testmeta]{
+		Task: func(ctx context.Context) error {
+			return assert.AnError
+		},
+		Meta: metaval,
+	}
+	m.RunTaskDefinition(context.Background(), def)
 
 	wg.Wait()
 	assert.True(t, executed)
@@ -203,8 +216,15 @@ func Test_OnGoroutineStalled(t *testing.T) {
 				},
 			})
 
-			m.Run(context.Background(), metaval, func(ctx context.Context) error {
-				<-time.After(test.duration)
+			def := background.TaskDefinition[testmeta]{
+				Task: func(ctx context.Context) error {
+					<-time.After(test.duration)
+					return nil
+				},
+				Meta: metaval,
+			}
+			m.RunTaskDefinition(context.Background(), def)
+			m.Run(context.Background(), func(ctx context.Context) error {
 				return nil
 			})
 
@@ -228,11 +248,49 @@ func Test_StalledGoroutineStillCallsOnTaskSucceeded(t *testing.T) {
 	})
 
 	wg.Add(1)
-	m.Run(context.Background(), true, func(ctx context.Context) error {
+	m.Run(context.Background(), func(ctx context.Context) error {
 		<-time.After(time.Millisecond * 3)
 		return nil
 	})
 
 	wg.Wait()
 	assert.True(t, executed)
+}
+
+func Test_TaskDefinitionRetryStrategies(t *testing.T) {
+	var limit uint = 5
+	var count uint = 0
+	m := background.NewManager()
+	def := background.TaskDefinition[background.NilMeta]{
+		Task: func(ctx context.Context) error {
+			count++
+			return assert.AnError
+		},
+		Retry: background.Retry{
+			strategy.Limit(limit),
+		},
+	}
+
+	m.RunTaskDefinition(context.Background(), def)
+	m.Wait()
+
+	assert.Equal(t, limit, count)
+}
+
+func Test_ManagerDefaultRetryStrategies(t *testing.T) {
+	var limit uint = 5
+	var count uint = 0
+	m := background.NewManagerWithOptions(background.Options[background.NilMeta]{
+		DefaultRetry: background.Retry{
+			strategy.Limit(limit),
+		},
+	})
+
+	m.Run(context.Background(), func(ctx context.Context) error {
+		count++
+		return assert.AnError
+	})
+	m.Wait()
+
+	assert.Equal(t, limit, count)
 }

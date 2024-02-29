@@ -4,6 +4,9 @@ import (
 	"context"
 	"sync"
 	"time"
+
+	"github.com/kamilsk/retry/v5"
+	"github.com/kamilsk/retry/v5/strategy"
 )
 
 // Manager keeps track of scheduled goroutines and provides mechanisms to wait for them to finish. `Meta` is whatever
@@ -20,6 +23,7 @@ type Manager[Meta any] struct {
 	len              int
 	stalledThreshold time.Duration
 	hooks            Hooks[Meta]
+	strategies       Retry
 }
 
 // Options provides a means for configuring the background manager and attaching hooks to it.
@@ -30,6 +34,9 @@ type Options[Meta any] struct {
 	// Hooks allow you to register monitoring functions that are called when something happens with the goroutines that
 	// you schedule. These are useful for logging, monitoring, etc.
 	Hooks Hooks[Meta]
+	// DefaultRetry defines the default retry strategies that will be used for all tasks unless overridden by the task.
+	// Several strategies are provided by github.com/kamilsk/retry/v5/strategy package.
+	DefaultRetry Retry
 }
 
 // Hooks are a set of functions that are called when certain events happen with the goroutines that you schedule. All of
@@ -45,6 +52,22 @@ type Hooks[Meta any] struct {
 	// make sure your goroutines do not take excessive amounts of time to run to completion.
 	OnGoroutineStalled func(ctx context.Context, meta Meta)
 }
+
+// TaskDefinition describes how a unit of work (a Task) should be executed.
+type TaskDefinition[Meta any] struct {
+	// Task is the function to be executed in a goroutine.
+	Task Task
+	// Meta is whatever you wish to associate with the task.
+	Meta Meta
+	// Retry defines how the task should be retried in case of failure (if at all). This overrides the default retry
+	// strategies you might have configured in the Manager. Several strategies are provided by
+	// github.com/kamilsk/retry/v5/strategy package.
+	Retry Retry
+}
+
+// Retry defines the functions that control the retry behavior of a task. Several strategies are provided by
+// github.com/kamilsk/retry/v5/strategy package.
+type Retry []strategy.Strategy
 
 // Task is the function to be executed in a goroutine
 type Task func(ctx context.Context) error
@@ -62,21 +85,27 @@ func NewManagerWithOptions[Meta any](options Options[Meta]) *Manager[Meta] {
 	return &Manager[Meta]{
 		stalledThreshold: options.StalledThreshold,
 		hooks:            options.Hooks,
+		strategies:       options.DefaultRetry,
 	}
 }
 
-// Run schedules the provided task to be executed in a goroutine. `Meta` is whatever you wish to associate with the
-// task.
-func (m *Manager[Meta]) Run(ctx context.Context, meta Meta, task Task) {
-	m.callOnTaskAdded(ctx, meta)
+// Run schedules the provided task to be executed in a goroutine.
+func (m *Manager[Meta]) Run(ctx context.Context, task Task) {
+	definition := TaskDefinition[Meta]{Task: task}
+	m.RunTaskDefinition(ctx, definition)
+}
+
+// RunTaskDefinition schedules the provided task definition to be executed in a goroutine.
+func (m *Manager[Meta]) RunTaskDefinition(ctx context.Context, definition TaskDefinition[Meta]) {
+	m.callOnTaskAdded(ctx, definition.Meta)
 	m.wg.Add(1)
 	m.len++
 
 	ctx = context.WithoutCancel(ctx)
 	done := make(chan bool, 1)
 
-	go m.run(ctx, meta, task, done)
-	go m.ticktock(ctx, meta, done)
+	go m.run(ctx, definition, done)
+	go m.ticktock(ctx, definition.Meta, done)
 }
 
 // Wait blocks until all scheduled tasks have finished.
@@ -89,16 +118,17 @@ func (m *Manager[Meta]) Len() int {
 	return m.len
 }
 
-func (m *Manager[Meta]) run(ctx context.Context, meta Meta, task Task, done chan<- bool) {
-	err := task(ctx)
+func (m *Manager[Meta]) run(ctx context.Context, definition TaskDefinition[Meta], done chan<- bool) {
+	strategies := mkstrategies(m.strategies, definition.Retry)
+	err := retry.Do(ctx, definition.Task, strategies...)
 	done <- true
 	m.wg.Done()
 	m.len--
 
 	if err != nil {
-		m.callOnTaskFailed(ctx, meta, err)
+		m.callOnTaskFailed(ctx, definition.Meta, err)
 	} else {
-		m.callOnTaskSucceeded(ctx, meta)
+		m.callOnTaskSucceeded(ctx, definition.Meta)
 	}
 }
 
@@ -144,4 +174,24 @@ func mktimeout(duration time.Duration) <-chan time.Time {
 		return make(<-chan time.Time)
 	}
 	return time.After(duration)
+}
+
+// mkstrategies prepares the retry strategies to be used for the task. If no defaults and no overrides are provided, a
+// single execution attempt retry strategy is used. This is because the retry package would retry indefinitely on
+// failure if no strategy is provided.
+func mkstrategies(defaults []strategy.Strategy, overrides []strategy.Strategy) []strategy.Strategy {
+	result := make([]strategy.Strategy, 0, max(len(defaults), len(overrides)))
+
+	if len(overrides) > 0 {
+		result = append(result, overrides...)
+	} else {
+		result = append(result, defaults...)
+	}
+
+	// If no retry strategies are provided we default to a single execution attempt
+	if len(result) == 0 {
+		result = append(result, strategy.Limit(1))
+	}
+
+	return result
 }
