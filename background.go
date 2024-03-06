@@ -2,6 +2,7 @@ package background
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/kamilsk/retry/v5"
@@ -93,6 +94,21 @@ func (m *Manager) Wait() {
 // cancelled. Adding a new loop task after calling Cancel() will cause the task to be ignored and not run.
 func (m *Manager) Cancel() {
 	m.loopmgr.cancel()
+}
+
+// Close is a convenience method that calls Wait() and Cancel() in parallel. It blocks until all tasks have finished.
+func (m *Manager) Close() {
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		m.Wait()
+		wg.Done()
+	}()
+	go func() {
+		m.Cancel()
+		wg.Done()
+	}()
+	wg.Wait()
 }
 
 // CountOf returns the number of tasks of the specified type that are currently running. When the TaskType is invalid it

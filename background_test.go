@@ -389,3 +389,36 @@ func Test_CountOf(t *testing.T) {
 	assert.Equal(t, 0, m.CountOf(background.TaskTypeLoop))
 	assert.Equal(t, 0, m.CountOf(background.TaskType(3)))
 }
+
+func Test_Close(t *testing.T) {
+	m := background.NewManager()
+	proceed := make(chan bool, 1)
+
+	def := background.Task{
+		Type: background.TaskTypeLoop,
+		Fn: func(ctx context.Context) error {
+			<-proceed
+			return nil
+		},
+	}
+	m.RunTask(context.Background(), def)
+	def = background.Task{
+		Type: background.TaskTypeOneOff,
+		Fn: func(ctx context.Context) error {
+			<-proceed
+			return nil
+		},
+	}
+	m.RunTask(context.Background(), def)
+	assert.Equal(t, 1, m.CountOf(background.TaskTypeOneOff))
+	assert.Equal(t, 1, m.CountOf(background.TaskTypeLoop))
+
+	go func() {
+		proceed <- true
+		proceed <- true
+	}()
+
+	m.Close()
+	assert.Equal(t, 0, m.CountOf(background.TaskTypeOneOff))
+	assert.Equal(t, 0, m.CountOf(background.TaskTypeLoop))
+}
