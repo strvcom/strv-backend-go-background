@@ -16,10 +16,11 @@ func Test_NewManager(t *testing.T) {
 	m := background.NewManager()
 	assert.NotNil(t, m)
 	assert.IsType(t, &background.Manager{}, m)
-	assert.EqualValues(t, 0, m.Len())
+	assert.EqualValues(t, 0, m.CountOf(background.TaskTypeOneOff))
+	assert.EqualValues(t, 0, m.CountOf(background.TaskTypeLoop))
 }
 
-func Test_RunExecutesInGoroutine(t *testing.T) {
+func Test_RunTaskExecutesInGoroutine(t *testing.T) {
 	m := background.NewManager()
 	proceed := make(chan bool, 1)
 
@@ -61,7 +62,7 @@ func Test_WaitWaitsForPendingTasks(t *testing.T) {
 	assert.True(t, waited)
 }
 
-func Test_CancelledParentContext(t *testing.T) {
+func Test_RunTaskCancelledParentContext(t *testing.T) {
 	m := background.NewManager()
 	ctx, cancel := context.WithCancel(context.Background())
 	proceed := make(chan bool, 1)
@@ -75,30 +76,6 @@ func Test_CancelledParentContext(t *testing.T) {
 	cancel()
 	proceed <- true
 	m.Wait()
-}
-
-func Test_Len(t *testing.T) {
-	proceed := make(chan bool, 1)
-	remaining := 10
-	m := background.NewManagerWithOptions(background.Options{
-		Observer: background.Observer{
-			OnTaskSucceeded: func(ctx context.Context, task background.Task) {
-				remaining--
-				proceed <- true
-			},
-		},
-	})
-
-	for range 10 {
-		m.Run(context.Background(), func(ctx context.Context) error {
-			<-proceed
-			return nil
-		})
-	}
-
-	proceed <- true
-	m.Wait()
-	assert.EqualValues(t, 0, m.Len())
 }
 
 func Test_OnTaskAdded(t *testing.T) {
@@ -183,7 +160,7 @@ func Test_OnTaskFailed(t *testing.T) {
 	assert.True(t, executed)
 }
 
-func Test_OnGoroutineStalled(t *testing.T) {
+func Test_OnTaskStalled(t *testing.T) {
 	tests := []struct {
 		duration      time.Duration
 		shouldExecute bool
@@ -232,7 +209,7 @@ func Test_OnGoroutineStalled(t *testing.T) {
 	}
 }
 
-func Test_StalledGoroutineStillCallsOnTaskSucceeded(t *testing.T) {
+func Test_StalledTaskStillCallsOnTaskSucceeded(t *testing.T) {
 	executed := false
 	var wg sync.WaitGroup
 	m := background.NewManagerWithOptions(background.Options{
@@ -255,7 +232,7 @@ func Test_StalledGoroutineStillCallsOnTaskSucceeded(t *testing.T) {
 	assert.True(t, executed)
 }
 
-func Test_TaskDefinitionRetryStrategies(t *testing.T) {
+func Test_TaskRetryStrategies(t *testing.T) {
 	var limit uint = 5
 	var count uint = 0
 	m := background.NewManager()
@@ -275,7 +252,7 @@ func Test_TaskDefinitionRetryStrategies(t *testing.T) {
 	assert.Equal(t, limit, count)
 }
 
-func Test_ManagerDefaultRetryStrategies(t *testing.T) {
+func Test_ManagerRetryStrategies(t *testing.T) {
 	var limit uint = 5
 	var count uint = 0
 	m := background.NewManagerWithOptions(background.Options{
@@ -291,4 +268,124 @@ func Test_ManagerDefaultRetryStrategies(t *testing.T) {
 	m.Wait()
 
 	assert.Equal(t, limit, count)
+}
+
+func Test_RunTaskTypeLoop(t *testing.T) {
+	loops := 0
+	m := background.NewManager()
+	def := background.Task{
+		Type: background.TaskTypeLoop,
+		Fn: func(ctx context.Context) error {
+			loops++
+			return nil
+		},
+	}
+
+	m.RunTask(context.Background(), def)
+	<-time.After(time.Microsecond * 500)
+
+	m.Cancel()
+	assert.GreaterOrEqual(t, loops, 100)
+}
+
+func Test_RunTaskTypeLoop_RetryStrategies(t *testing.T) {
+	done := make(chan error, 1)
+	count := 0
+
+	m := background.NewManagerWithOptions(background.Options{
+		Observer: background.Observer{
+			OnTaskFailed: func(ctx context.Context, task background.Task, err error) {
+				done <- err
+			},
+		},
+	})
+	def := background.Task{
+		Type: background.TaskTypeLoop,
+		Fn: func(ctx context.Context) error {
+			count++
+			// TODO: Figure out why we need to wait here to avoid test timeout
+			<-time.After(time.Millisecond)
+			return assert.AnError
+		},
+		Retry: background.Retry{
+			strategy.Limit(2),
+		},
+	}
+
+	m.RunTask(context.Background(), def)
+	err := <-done
+	m.Cancel()
+
+	assert.Equal(t, assert.AnError, err)
+	// We cannot guarantee exact count of executions because by the time we cancel the task the loop might have made
+	// several additional iterations.
+	assert.GreaterOrEqual(t, count, 2)
+}
+
+func Test_RunTaskTypeLoop_CancelledParentContext(t *testing.T) {
+	m := background.NewManager()
+	cancellable, cancel := context.WithCancel(context.Background())
+	proceed := make(chan bool, 1)
+	done := make(chan error, 1)
+	var once sync.Once
+
+	def := background.Task{
+		Type: background.TaskTypeLoop,
+		Fn: func(ctx context.Context) error {
+			once.Do(func() {
+				proceed <- true
+				// Cancel the parent context and send the child context's error out to the test
+				// The expectation is that the child context will not be cancelled
+				cancel()
+				done <- ctx.Err()
+			})
+
+			return nil
+		},
+	}
+
+	m.RunTask(cancellable, def)
+	// Make sure we wait for the loop to run at least one iteration before cancelling it
+	<-proceed
+	m.Cancel()
+	err := <-done
+
+	assert.Equal(t, nil, err)
+}
+
+func Test_CountOf(t *testing.T) {
+	m := background.NewManager()
+
+	assert.Equal(t, 0, m.CountOf(background.TaskTypeOneOff))
+	assert.Equal(t, 0, m.CountOf(background.TaskTypeLoop))
+	assert.Equal(t, 0, m.CountOf(background.TaskType(3)))
+
+	def := background.Task{
+		Type: background.TaskTypeOneOff,
+		Fn: func(ctx context.Context) error {
+			return nil
+		},
+	}
+	m.RunTask(context.Background(), def)
+	assert.Equal(t, 1, m.CountOf(background.TaskTypeOneOff))
+	assert.Equal(t, 0, m.CountOf(background.TaskTypeLoop))
+	assert.Equal(t, 0, m.CountOf(background.TaskType(3)))
+	m.Wait()
+
+	def = background.Task{
+		Type: background.TaskTypeLoop,
+		Fn: func(ctx context.Context) error {
+			return nil
+		},
+	}
+
+	m.RunTask(context.Background(), def)
+	assert.Equal(t, 0, m.CountOf(background.TaskTypeOneOff))
+	assert.Equal(t, 1, m.CountOf(background.TaskTypeLoop))
+	assert.Equal(t, 0, m.CountOf(background.TaskType(3)))
+	m.Cancel()
+
+	assert.Equal(t, 0, m.CountOf(background.TaskTypeOneOff))
+	assert.Equal(t, 0, m.CountOf(background.TaskTypeLoop))
+	assert.Equal(t, 0, m.CountOf(background.TaskType(3)))
 }
