@@ -83,8 +83,8 @@ func Test_OnTaskAdded(t *testing.T) {
 	executed := false
 	var wg sync.WaitGroup
 	m := background.NewManagerWithOptions(background.Options{
-		Observer: background.Observer{
-			OnTaskAdded: func(ctx context.Context, task background.Task) {
+		Observer: background.DefaultObserver{
+			HandleOnTaskAdded: func(ctx context.Context, task background.Task) {
 				assert.Equal(t, metadata, task.Meta)
 				executed = true
 				wg.Done()
@@ -110,8 +110,8 @@ func Test_OnTaskSucceeded(t *testing.T) {
 	executed := false
 	var wg sync.WaitGroup
 	m := background.NewManagerWithOptions(background.Options{
-		Observer: background.Observer{
-			OnTaskSucceeded: func(ctx context.Context, task background.Task) {
+		Observer: background.DefaultObserver{
+			HandleOnTaskSucceeded: func(ctx context.Context, task background.Task) {
 				assert.Equal(t, metadata, task.Meta)
 				executed = true
 				wg.Done()
@@ -137,8 +137,8 @@ func Test_OnTaskFailed(t *testing.T) {
 	executed := false
 	var wg sync.WaitGroup
 	m := background.NewManagerWithOptions(background.Options{
-		Observer: background.Observer{
-			OnTaskFailed: func(ctx context.Context, task background.Task, err error) {
+		Observer: background.DefaultObserver{
+			HandleOnTaskFailed: func(ctx context.Context, task background.Task, err error) {
 				assert.Equal(t, metadata, task.Meta)
 				assert.Error(t, err)
 				executed = true
@@ -182,8 +182,8 @@ func Test_OnTaskStalled(t *testing.T) {
 
 			m := background.NewManagerWithOptions(background.Options{
 				StalledThreshold: time.Millisecond * 5,
-				Observer: background.Observer{
-					OnTaskStalled: func(ctx context.Context, task background.Task) {
+				Observer: background.DefaultObserver{
+					HandleOnTaskStalled: func(ctx context.Context, task background.Task) {
 						assert.Equal(t, metadata, task.Meta)
 						executed = true
 						wg.Done()
@@ -214,8 +214,8 @@ func Test_StalledTaskStillCallsOnTaskSucceeded(t *testing.T) {
 	var wg sync.WaitGroup
 	m := background.NewManagerWithOptions(background.Options{
 		StalledThreshold: time.Millisecond,
-		Observer: background.Observer{
-			OnTaskSucceeded: func(ctx context.Context, task background.Task) {
+		Observer: background.DefaultObserver{
+			HandleOnTaskSucceeded: func(ctx context.Context, task background.Task) {
 				executed = true
 				wg.Done()
 			},
@@ -293,8 +293,8 @@ func Test_RunTaskTypeLoop_RetryStrategies(t *testing.T) {
 	count := 0
 
 	m := background.NewManagerWithOptions(background.Options{
-		Observer: background.Observer{
-			OnTaskFailed: func(ctx context.Context, task background.Task, err error) {
+		Observer: background.DefaultObserver{
+			HandleOnTaskFailed: func(ctx context.Context, task background.Task, err error) {
 				done <- err
 			},
 		},

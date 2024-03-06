@@ -28,13 +28,6 @@ var (
 // Manager keeps track of scheduled goroutines and provides mechanisms to wait for them to finish or cancel their
 // execution. `Meta` is whatever you wish to associate with this task, usually something that will help you keep track
 // of the tasks in the observer.
-//
-// This is useful in context of HTTP servers, where a customer request may result in some kind of background processing
-// activity that should not block the response and you schedule a goroutine to handle it. However, if your server
-// receives a termination signal and you do not wait for these goroutines to finish, the goroutines will be killed
-// before they can run to completion. This package is not a replacement for a proper task queue system but it is a great
-// package to schedule the queue jobs without the customer waiting for that to happen while at the same time being able
-// to wait for all those goroutines to finish before allowing the process to exit.
 type Manager struct {
 	stalledThreshold time.Duration
 	observer         Observer
@@ -43,7 +36,7 @@ type Manager struct {
 	loopmgr          loopmgr
 }
 
-// Options provides a means for configuring the background manager and attaching hooks to it.
+// Options provides a means for configuring the background manager and providing the observer to it.
 type Options struct {
 	// StalledThreshold is the amount of time within which the task should return before it is considered stalled. Note
 	// that no effort is made to actually stop or kill the task.
@@ -78,8 +71,8 @@ type Retry []strategy.Strategy
 // Fn is the function to be executed in a goroutine.
 type Fn func(ctx context.Context) error
 
-// Metadata is whatever custom information you wish to associate with a task. This information will be available in your
-// lifecycle hooks to help you identify which task is being processed.
+// Metadata is whatever custom information you wish to associate with a task. You can access this data in the observer's
+// methods to help you identify the task or get more context about it.
 type Metadata map[string]string
 
 // NewManager creates a new instance of Manager with default options and no observer.
@@ -89,10 +82,15 @@ func NewManager() *Manager {
 
 // NewManagerWithOptions creates a new instance of Manager with the provided options and observer.
 func NewManagerWithOptions(options Options) *Manager {
+	observer := options.Observer
+	if observer == nil {
+		observer = DefaultObserver{}
+	}
+
 	return &Manager{
 		stalledThreshold: options.StalledThreshold,
-		observer:         options.Observer,
 		retry:            options.Retry,
+		observer:         observer,
 		loopmgr:          mkloopmgr(),
 	}
 }
@@ -108,7 +106,7 @@ func (m *Manager) Run(ctx context.Context, fn Fn) {
 func (m *Manager) RunTask(ctx context.Context, task Task) {
 	ctx = context.WithoutCancel(ctx)
 	done := make(chan error, 1)
-	m.observer.callOnTaskAdded(ctx, task)
+	m.observer.OnTaskAdded(ctx, task)
 
 	switch task.Type {
 	case TaskTypeOneOff:
@@ -121,7 +119,7 @@ func (m *Manager) RunTask(ctx context.Context, task Task) {
 		go m.loop(ctx, task, done)
 
 	default:
-		m.observer.callOnTaskFailed(ctx, task, ErrUnknownTaskType)
+		m.observer.OnTaskFailed(ctx, task, ErrUnknownTaskType)
 	}
 }
 
@@ -165,7 +163,7 @@ func (m *Manager) loop(ctx context.Context, task Task, done chan error) {
 		m.run(ctx, task, done)
 		err := <-done
 		if err != nil {
-			m.observer.callOnTaskFailed(ctx, task, err)
+			m.observer.OnTaskFailed(ctx, task, err)
 		}
 	}
 }
@@ -177,12 +175,12 @@ func (m *Manager) observe(ctx context.Context, task Task, done <-chan error) {
 	for {
 		select {
 		case <-timeout:
-			m.observer.callOnTaskStalled(ctx, task)
+			m.observer.OnTaskStalled(ctx, task)
 		case err := <-done:
 			if err != nil {
-				m.observer.callOnTaskFailed(ctx, task, err)
+				m.observer.OnTaskFailed(ctx, task, err)
 			} else {
-				m.observer.callOnTaskSucceeded(ctx, task)
+				m.observer.OnTaskSucceeded(ctx, task)
 			}
 
 			return
