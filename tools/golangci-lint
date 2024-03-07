@@ -11,4 +11,4 @@ exec docker run -t \
   --volume "$(pwd):/app" \
   --volume "$(pwd)/.cache/golangci-lint:/root/.cache" \
   --workdir /app \
-  "$image" golangci-lint "$@"
+  "$image" golangci-lint --color never "$@" # Force no colour output to allow GH Actions problem matchers to work
