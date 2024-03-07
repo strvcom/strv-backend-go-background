@@ -99,11 +99,12 @@ func (m *Manager) Cancel() {
 // Close is a convenience method that calls Wait() and Cancel() in parallel. It blocks until all tasks have finished.
 func (m *Manager) Close() {
 	var wg sync.WaitGroup
-	wg.Add(2)
+	wg.Add(1)
 	go func() {
 		m.Wait()
 		wg.Done()
 	}()
+	wg.Add(1)
 	go func() {
 		m.Cancel()
 		wg.Done()
