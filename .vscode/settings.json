@@ -1,0 +1,10 @@
+{
+  "task.allowAutomaticTasks": "off",
+  "window.title": "go.strv.io/background${separator}${activeEditorShort}",
+  "go.lintTool": "golangci-lint",
+  "go.testTimeout": "5s",
+  "go.useLanguageServer": true,
+  "gopls": {
+    "ui.semanticTokens": true,
+  },
+}

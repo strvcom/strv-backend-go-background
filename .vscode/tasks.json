@@ -1,0 +1,101 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "make: test",
+      "detail": "Run the test suite",
+      "type": "process",
+      "command": "make",
+      "args": [
+        "test"
+      ],
+      "problemMatcher": {
+        "owner": "github.com/stretchr/testify/assert",
+        "applyTo": "allDocuments",
+        "fileLocation": [
+          "absolute"
+        ],
+        "pattern": [
+          {
+            "regexp": "^\\s+Error Trace:\\s+(.+):(\\d+)$",
+            "file": 1,
+            "line": 2
+          },
+          // This is extremely rudimentary because VS Code does not support matching the message across multiple lines
+          // so this only shows the error but does not show the expected and actual values in the UI 🤦‍♂️
+          {
+            "regexp": "^\\s+Error:\\s+(.+)(?=:?)",
+            "message": 1
+          }
+        ]
+      },
+      "isTestCommand": true,
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      },
+      "presentation": {
+        "clear": true
+      },
+      "icon": {
+        "id": "beaker",
+        "color": "terminal.ansiGreen"
+      }
+    },
+    {
+      "label": "make: lint",
+      "detail": "Run the linter using Docker (golangci-lint)",
+      "type": "process",
+      "command": "make",
+      "args": [
+        "lint"
+      ],
+      "problemMatcher": {
+        "owner": "golangci-lint",
+        "applyTo": "allDocuments",
+        "fileLocation": [
+          "relative",
+          "${workspaceFolder}"
+        ],
+        "pattern": {
+          "regexp": "^(.+\\.go):(\\d+):(\\d+): \\w+: (.+) \\((\\w+)\\)$",
+          "file": 1,
+          "line": 2,
+          "column": 3,
+          "message": 4,
+          "code": 5
+        },
+      },
+      "group": {
+        "kind": "test",
+        "isDefault": false
+      },
+      "presentation": {
+        "clear": true,
+      },
+      "icon": {
+        "id": "eye",
+        "color": "terminal.ansiYellow"
+      }
+    },
+    {
+      "label": "make: clean",
+      "detail": "Remove compiled and generated files or caches",
+      "type": "process",
+      "command": "make",
+      "args": [
+        "clean"
+      ],
+      "problemMatcher": [],
+      "presentation": {
+        "showReuseMessage": false,
+        "clear": true,
+        "close": true
+      },
+      "icon": {
+        "id": "trash",
+        "color": "terminal.ansiRed"
+      }
+    }
+  ],
+}

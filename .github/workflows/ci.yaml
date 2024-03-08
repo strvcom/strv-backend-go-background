@@ -19,6 +19,8 @@ jobs:
         with:
           go-version-file: go.mod
       - run: go version
+      - run: echo "::add-matcher::.github/matchers/golangci-lint.json"
+
       - run: make lint
 
   test:
@@ -32,6 +34,8 @@ jobs:
         with:
           go-version-file: go.mod
       - run: go version
+      - run: echo "::add-matcher::.github/matchers/testify.json"
+
       - run: make test
       - name: Upload coverage reports to Codecov
         if: success()

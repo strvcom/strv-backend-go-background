@@ -1,0 +1,27 @@
+{
+  "problemMatcher": [
+    {
+      "owner": "github.com/stretchr/testify/assert",
+      "pattern": [
+        {
+          "regexp": "^\\s+Error Trace:\\s+(.+):(\\d+)$",
+          "file": 1,
+          "line": 2
+        },
+        {
+          "regexp": "^\\s+Error:\\s+(.+)(?=:?)",
+          "message": 1
+        }
+      ]
+    },
+    {
+      "owner": "go",
+      "pattern": [
+        {
+          "regexp": "^(panic: .+)$",
+          "message": 1
+        }
+      ]
+    }
+  ]
+}
