@@ -2,39 +2,16 @@ package background
 
 import (
 	"context"
-	"errors"
+	"sync"
 	"time"
 
 	"github.com/kamilsk/retry/v5"
 	"github.com/kamilsk/retry/v5/strategy"
 )
 
-// TaskType determines how the task will be executed by the manager.
-type TaskType int
-
-const (
-	// TaskTypeOneOff is the default task type. It will be executed only once.
-	TaskTypeOneOff TaskType = iota
-	// TaskTypeLoop will be executed in an infinite loop until the manager's Cancel() method is called. The task will
-	// restart immediately after the previous iteration returns.
-	TaskTypeLoop
-)
-
-var (
-	// ErrUnknownTaskType is returned when the task type is not a valid value of TaskType.
-	ErrUnknownTaskType = errors.New("unknown task type")
-)
-
 // Manager keeps track of scheduled goroutines and provides mechanisms to wait for them to finish or cancel their
 // execution. `Meta` is whatever you wish to associate with this task, usually something that will help you keep track
 // of the tasks in the observer.
-//
-// This is useful in context of HTTP servers, where a customer request may result in some kind of background processing
-// activity that should not block the response and you schedule a goroutine to handle it. However, if your server
-// receives a termination signal and you do not wait for these goroutines to finish, the goroutines will be killed
-// before they can run to completion. This package is not a replacement for a proper task queue system but it is a great
-// package to schedule the queue jobs without the customer waiting for that to happen while at the same time being able
-// to wait for all those goroutines to finish before allowing the process to exit.
 type Manager struct {
 	stalledThreshold time.Duration
 	observer         Observer
@@ -43,7 +20,7 @@ type Manager struct {
 	loopmgr          loopmgr
 }
 
-// Options provides a means for configuring the background manager and attaching hooks to it.
+// Options provides a means for configuring the background manager and providing the observer to it.
 type Options struct {
 	// StalledThreshold is the amount of time within which the task should return before it is considered stalled. Note
 	// that no effort is made to actually stop or kill the task.
@@ -56,31 +33,9 @@ type Options struct {
 	Retry Retry
 }
 
-// Task describes how a unit of work (a function) should be executed.
-type Task struct {
-	// Fn is the function to be executed in a goroutine.
-	Fn Fn
-	// Type is the type of the task. It determines how the task will be executed by the manager. Default is TaskTypeOneOff.
-	Type TaskType
-	// Meta is whatever custom information you wish to associate with the task. This will be passed to the observer's
-	// functions.
-	Meta Metadata
-	// Retry defines how the task should be retried in case of failure (if at all). This overrides the default retry
-	// strategies you might have configured in the Manager. Several strategies are provided by
-	// github.com/kamilsk/retry/v5/strategy package.
-	Retry Retry
-}
-
 // Retry defines the functions that control the retry behavior of a task. Several strategies are provided by
 // github.com/kamilsk/retry/v5/strategy package.
 type Retry []strategy.Strategy
-
-// Fn is the function to be executed in a goroutine.
-type Fn func(ctx context.Context) error
-
-// Metadata is whatever custom information you wish to associate with a task. This information will be available in your
-// lifecycle hooks to help you identify which task is being processed.
-type Metadata map[string]string
 
 // NewManager creates a new instance of Manager with default options and no observer.
 func NewManager() *Manager {
@@ -89,10 +44,15 @@ func NewManager() *Manager {
 
 // NewManagerWithOptions creates a new instance of Manager with the provided options and observer.
 func NewManagerWithOptions(options Options) *Manager {
+	observer := options.Observer
+	if observer == nil {
+		observer = DefaultObserver{}
+	}
+
 	return &Manager{
 		stalledThreshold: options.StalledThreshold,
-		observer:         options.Observer,
 		retry:            options.Retry,
+		observer:         observer,
 		loopmgr:          mkloopmgr(),
 	}
 }
@@ -108,7 +68,7 @@ func (m *Manager) Run(ctx context.Context, fn Fn) {
 func (m *Manager) RunTask(ctx context.Context, task Task) {
 	ctx = context.WithoutCancel(ctx)
 	done := make(chan error, 1)
-	m.observer.callOnTaskAdded(ctx, task)
+	m.observer.OnTaskAdded(ctx, task)
 
 	switch task.Type {
 	case TaskTypeOneOff:
@@ -121,7 +81,7 @@ func (m *Manager) RunTask(ctx context.Context, task Task) {
 		go m.loop(ctx, task, done)
 
 	default:
-		m.observer.callOnTaskFailed(ctx, task, ErrUnknownTaskType)
+		m.observer.OnTaskFailed(ctx, task, ErrUnknownTaskType)
 	}
 }
 
@@ -134,6 +94,22 @@ func (m *Manager) Wait() {
 // cancelled. Adding a new loop task after calling Cancel() will cause the task to be ignored and not run.
 func (m *Manager) Cancel() {
 	m.loopmgr.cancel()
+}
+
+// Close is a convenience method that calls Wait() and Cancel() in parallel. It blocks until all tasks have finished.
+func (m *Manager) Close() {
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		m.Wait()
+		wg.Done()
+	}()
+	wg.Add(1)
+	go func() {
+		m.Cancel()
+		wg.Done()
+	}()
+	wg.Wait()
 }
 
 // CountOf returns the number of tasks of the specified type that are currently running. When the TaskType is invalid it
@@ -165,7 +141,7 @@ func (m *Manager) loop(ctx context.Context, task Task, done chan error) {
 		m.run(ctx, task, done)
 		err := <-done
 		if err != nil {
-			m.observer.callOnTaskFailed(ctx, task, err)
+			m.observer.OnTaskFailed(ctx, task, err)
 		}
 	}
 }
@@ -177,12 +153,12 @@ func (m *Manager) observe(ctx context.Context, task Task, done <-chan error) {
 	for {
 		select {
 		case <-timeout:
-			m.observer.callOnTaskStalled(ctx, task)
+			m.observer.OnTaskStalled(ctx, task)
 		case err := <-done:
 			if err != nil {
-				m.observer.callOnTaskFailed(ctx, task, err)
+				m.observer.OnTaskFailed(ctx, task, err)
 			} else {
-				m.observer.callOnTaskSucceeded(ctx, task)
+				m.observer.OnTaskSucceeded(ctx, task)
 			}
 
 			return

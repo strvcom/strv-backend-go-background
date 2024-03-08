@@ -2,40 +2,61 @@ package background
 
 import "context"
 
-// Observer includes a set of functions that are called when certain events happen with the tasks that you schedule. All
-// of them are optional; implement only those you need.
-type Observer struct {
-	// OnTaskAdded is called immediately after adding the Task to the background manager.
-	OnTaskAdded func(ctx context.Context, task Task)
+// Observer implements a set of methods that are called when certain events happen with the tasks that you schedule.
+type Observer interface {
+	// OnTaskAdded is called immediately after scheduling the Task for execution.
+	OnTaskAdded(ctx context.Context, task Task)
 	// OnTaskSucceeded is called immediately after Task returns with no error.
-	OnTaskSucceeded func(ctx context.Context, task Task)
-	// OnTaskFailed is called immediately after Task returns with an error.
-	OnTaskFailed func(ctx context.Context, task Task, err error)
+	//
+	// Ignored for TaskTypeLoop.
+	OnTaskSucceeded(ctx context.Context, task Task)
+	// OnTaskFailed is called after Task returns an error and all retry policy attempts have been exhausted.
+	OnTaskFailed(ctx context.Context, task Task, err error)
 	// OnTaskStalled is called when the task does not return within the StalledThreshold. You can use this to make sure
 	// your tasks do not take excessive amounts of time to run to completion.
-	OnTaskStalled func(ctx context.Context, task Task)
+	//
+	// Ignored for TaskTypeLoop.
+	OnTaskStalled(ctx context.Context, task Task)
 }
 
-func (h Observer) callOnTaskFailed(ctx context.Context, task Task, err error) {
-	if h.OnTaskFailed != nil {
-		h.OnTaskFailed(ctx, task, err)
+// DefaultObserver is an implementation of the Observer interface that allows you to observe only the events you are
+// interested in.
+type DefaultObserver struct {
+	// OnTaskAdded is called immediately after scheduling the Task for execution.
+	HandleOnTaskAdded func(ctx context.Context, task Task)
+	// OnTaskSucceeded is called immediately after Task returns with no error.
+	//
+	// Ignored for TaskTypeLoop.
+	HandleOnTaskSucceeded func(ctx context.Context, task Task)
+	// OnTaskFailed is called after Task returns an error and all retry policy attempts have been exhausted.
+	HandleOnTaskFailed func(ctx context.Context, task Task, err error)
+	// OnTaskStalled is called when the task does not return within the StalledThreshold. You can use this to make sure
+	// your tasks do not take excessive amounts of time to run to completion.
+	//
+	// Ignored for TaskTypeLoop.
+	HandleOnTaskStalled func(ctx context.Context, task Task)
+}
+
+func (o DefaultObserver) OnTaskFailed(ctx context.Context, task Task, err error) {
+	if o.HandleOnTaskFailed != nil {
+		o.HandleOnTaskFailed(ctx, task, err)
 	}
 }
 
-func (h Observer) callOnTaskSucceeded(ctx context.Context, task Task) {
-	if h.OnTaskSucceeded != nil {
-		h.OnTaskSucceeded(ctx, task)
+func (o DefaultObserver) OnTaskSucceeded(ctx context.Context, task Task) {
+	if o.HandleOnTaskSucceeded != nil {
+		o.HandleOnTaskSucceeded(ctx, task)
 	}
 }
 
-func (h Observer) callOnTaskAdded(ctx context.Context, task Task) {
-	if h.OnTaskAdded != nil {
-		h.OnTaskAdded(ctx, task)
+func (o DefaultObserver) OnTaskAdded(ctx context.Context, task Task) {
+	if o.HandleOnTaskAdded != nil {
+		o.HandleOnTaskAdded(ctx, task)
 	}
 }
 
-func (h Observer) callOnTaskStalled(ctx context.Context, task Task) {
-	if h.OnTaskStalled != nil {
-		h.OnTaskStalled(ctx, task)
+func (o DefaultObserver) OnTaskStalled(ctx context.Context, task Task) {
+	if o.HandleOnTaskStalled != nil {
+		o.HandleOnTaskStalled(ctx, task)
 	}
 }
