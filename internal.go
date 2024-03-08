@@ -72,8 +72,8 @@ func mktimeout(duration time.Duration) <-chan time.Time {
 // mkstrategies prepares the retry strategies to be used for the task. If no defaults and no overrides are provided, a
 // single execution attempt retry strategy is used. This is because the retry package would retry indefinitely on
 // failure if no strategy is provided.
-func mkstrategies(defaults Retry, overrides Retry) Retry {
-	result := make(Retry, 0, max(len(defaults), len(overrides), 1))
+func mkstrategies(defaults []strategy.Strategy, overrides []strategy.Strategy) []strategy.Strategy {
+	result := make([]strategy.Strategy, 0, max(len(defaults), len(overrides), 1))
 
 	if len(overrides) > 0 {
 		result = append(result, overrides...)
