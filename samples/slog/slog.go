@@ -23,11 +23,12 @@ var (
 func main() {
 	// Customise the default logger to output JSON
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
+	slog.Info("application starting - press Ctrl+C to terminate")
 
 	manager := background.NewManagerWithOptions(background.Options{
 		// Use the provided Slog observer to save some development time
 		Observer: observer.Slog{},
-		Retry: []strategy.Strategy{
+		Retry: task.Retry{
 			strategy.Limit(1),
 		},
 	})

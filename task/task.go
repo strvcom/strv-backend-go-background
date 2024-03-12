@@ -3,7 +3,6 @@ package task
 import (
 	"context"
 	"errors"
-	"log/slog"
 
 	"github.com/kamilsk/retry/v5/strategy"
 )
@@ -18,18 +17,6 @@ const (
 	// restart immediately after the previous iteration returns.
 	TypeLoop
 )
-
-// LogValue implements slog.LogValuer.
-func (t Type) LogValue() slog.Value {
-	switch t {
-	case TypeOneOff:
-		return slog.StringValue("oneoff")
-	case TypeLoop:
-		return slog.StringValue("loop")
-	default:
-		return slog.StringValue("invalid")
-	}
-}
 
 var (
 	// ErrUnknownType is returned when the task type is not a valid value of Type.
@@ -47,16 +34,8 @@ type Task struct {
 	Meta Metadata
 	// Retry defines how the task should be retried in case of failure (if at all). This overrides the default retry
 	// strategies you might have configured in the Manager. Several strategies are provided by
-	// github.com/kamilsk/retry/v5/strategy package.
-	Retry []strategy.Strategy
-}
-
-// LogValue implements slog.LogValuer.
-func (definition Task) LogValue() slog.Value {
-	return slog.GroupValue(
-		slog.Any("type", definition.Type),
-		slog.Any("meta", definition.Meta),
-	)
+	// https://pkg.go.dev/github.com/kamilsk/retry/v5/strategy package.
+	Retry Retry
 }
 
 // Fn is the function to be executed in a goroutine.
@@ -66,12 +45,6 @@ type Fn func(ctx context.Context) error
 // methods to help you identify the task or get more context about it.
 type Metadata map[string]string
 
-// LogValue implements slog.LogValuer.
-func (meta Metadata) LogValue() slog.Value {
-	values := make([]slog.Attr, 0, len(meta))
-	for key, value := range meta {
-		values = append(values, slog.String(key, value))
-	}
-
-	return slog.GroupValue(values...)
-}
+// Retry defines how the task should be retried in case of failure (if at all). Several strategies are provided by
+// https://pkg.go.dev/github.com/kamilsk/retry/v5/strategy package.
+type Retry []strategy.Strategy
