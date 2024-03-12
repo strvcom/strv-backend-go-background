@@ -9,7 +9,6 @@ import (
 	"go.strv.io/background/task"
 
 	"github.com/kamilsk/retry/v5"
-	"github.com/kamilsk/retry/v5/strategy"
 )
 
 // Manager keeps track of scheduled goroutines and provides mechanisms to wait for them to finish or cancel their
@@ -18,7 +17,7 @@ import (
 type Manager struct {
 	stalledThreshold time.Duration
 	observer         observer.Observer
-	retry            []strategy.Strategy
+	retry            task.Retry
 	taskmgr          taskmgr
 	loopmgr          loopmgr
 }
@@ -32,8 +31,8 @@ type Options struct {
 	// schedule. These are useful for logging, monitoring, etc.
 	Observer observer.Observer
 	// Retry defines the default retry strategies that will be used for all tasks unless overridden by the task. Several
-	// strategies are provided by github.com/kamilsk/retry/v5/strategy package.
-	Retry []strategy.Strategy
+	// strategies are provided by https://pkg.go.dev/github.com/kamilsk/retry/v5/strategy package.
+	Retry task.Retry
 }
 
 // NewManager creates a new instance of Manager with default options and no observer.
