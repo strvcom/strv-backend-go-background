@@ -10,14 +10,16 @@ import (
 	"github.com/kamilsk/retry/v5/strategy"
 	"github.com/stretchr/testify/assert"
 	"go.strv.io/background"
+	"go.strv.io/background/observer"
+	"go.strv.io/background/task"
 )
 
 func Test_NewManager(t *testing.T) {
 	m := background.NewManager()
 	assert.NotNil(t, m)
 	assert.IsType(t, &background.Manager{}, m)
-	assert.EqualValues(t, 0, m.CountOf(background.TaskTypeOneOff))
-	assert.EqualValues(t, 0, m.CountOf(background.TaskTypeLoop))
+	assert.EqualValues(t, 0, m.CountOf(task.TypeOneOff))
+	assert.EqualValues(t, 0, m.CountOf(task.TypeLoop))
 }
 
 func Test_RunTaskExecutesInGoroutine(t *testing.T) {
@@ -79,13 +81,13 @@ func Test_RunTaskCancelledParentContext(t *testing.T) {
 }
 
 func Test_OnTaskAdded(t *testing.T) {
-	metadata := background.Metadata{"test": "value"}
+	metadata := task.Metadata{"test": "value"}
 	executed := false
 	var wg sync.WaitGroup
 	m := background.NewManagerWithOptions(background.Options{
-		Observer: background.DefaultObserver{
-			HandleOnTaskAdded: func(ctx context.Context, task background.Task) {
-				assert.Equal(t, metadata, task.Meta)
+		Observer: observer.Default{
+			HandleOnTaskAdded: func(ctx context.Context, definition task.Task) {
+				assert.Equal(t, metadata, definition.Meta)
 				executed = true
 				wg.Done()
 			},
@@ -93,7 +95,7 @@ func Test_OnTaskAdded(t *testing.T) {
 	})
 
 	wg.Add(1)
-	def := background.Task{
+	def := task.Task{
 		Fn: func(ctx context.Context) error {
 			return nil
 		},
@@ -106,13 +108,13 @@ func Test_OnTaskAdded(t *testing.T) {
 }
 
 func Test_OnTaskSucceeded(t *testing.T) {
-	metadata := background.Metadata{"test": "value"}
+	metadata := task.Metadata{"test": "value"}
 	executed := false
 	var wg sync.WaitGroup
 	m := background.NewManagerWithOptions(background.Options{
-		Observer: background.DefaultObserver{
-			HandleOnTaskSucceeded: func(ctx context.Context, task background.Task) {
-				assert.Equal(t, metadata, task.Meta)
+		Observer: observer.Default{
+			HandleOnTaskSucceeded: func(ctx context.Context, definition task.Task) {
+				assert.Equal(t, metadata, definition.Meta)
 				executed = true
 				wg.Done()
 			},
@@ -120,7 +122,7 @@ func Test_OnTaskSucceeded(t *testing.T) {
 	})
 
 	wg.Add(1)
-	def := background.Task{
+	def := task.Task{
 		Fn: func(ctx context.Context) error {
 			return nil
 		},
@@ -133,13 +135,13 @@ func Test_OnTaskSucceeded(t *testing.T) {
 }
 
 func Test_OnTaskFailed(t *testing.T) {
-	metadata := background.Metadata{"test": "value"}
+	metadata := task.Metadata{"test": "value"}
 	executed := false
 	var wg sync.WaitGroup
 	m := background.NewManagerWithOptions(background.Options{
-		Observer: background.DefaultObserver{
-			HandleOnTaskFailed: func(ctx context.Context, task background.Task, err error) {
-				assert.Equal(t, metadata, task.Meta)
+		Observer: observer.Default{
+			HandleOnTaskFailed: func(ctx context.Context, definition task.Task, err error) {
+				assert.Equal(t, metadata, definition.Meta)
 				assert.Error(t, err)
 				executed = true
 				wg.Done()
@@ -148,7 +150,7 @@ func Test_OnTaskFailed(t *testing.T) {
 	})
 
 	wg.Add(1)
-	def := background.Task{
+	def := task.Task{
 		Fn: func(ctx context.Context) error {
 			return assert.AnError
 		},
@@ -173,7 +175,7 @@ func Test_OnTaskStalled(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(fmt.Sprintf("duration of %s)", test.duration.String()), func(t *testing.T) {
-			metadata := background.Metadata{"test": "value"}
+			metadata := task.Metadata{"test": "value"}
 			executed := false
 			var wg sync.WaitGroup
 			if test.shouldExecute == true {
@@ -182,16 +184,16 @@ func Test_OnTaskStalled(t *testing.T) {
 
 			m := background.NewManagerWithOptions(background.Options{
 				StalledThreshold: time.Millisecond * 5,
-				Observer: background.DefaultObserver{
-					HandleOnTaskStalled: func(ctx context.Context, task background.Task) {
-						assert.Equal(t, metadata, task.Meta)
+				Observer: observer.Default{
+					HandleOnTaskStalled: func(ctx context.Context, definition task.Task) {
+						assert.Equal(t, metadata, definition.Meta)
 						executed = true
 						wg.Done()
 					},
 				},
 			})
 
-			def := background.Task{
+			def := task.Task{
 				Fn: func(ctx context.Context) error {
 					<-time.After(test.duration)
 					return nil
@@ -214,8 +216,8 @@ func Test_StalledTaskStillCallsOnTaskSucceeded(t *testing.T) {
 	var wg sync.WaitGroup
 	m := background.NewManagerWithOptions(background.Options{
 		StalledThreshold: time.Millisecond,
-		Observer: background.DefaultObserver{
-			HandleOnTaskSucceeded: func(ctx context.Context, task background.Task) {
+		Observer: observer.Default{
+			HandleOnTaskSucceeded: func(ctx context.Context, definition task.Task) {
 				executed = true
 				wg.Done()
 			},
@@ -236,12 +238,12 @@ func Test_TaskRetryStrategies(t *testing.T) {
 	var limit uint = 5
 	var count uint = 0
 	m := background.NewManager()
-	def := background.Task{
+	def := task.Task{
 		Fn: func(ctx context.Context) error {
 			count++
 			return assert.AnError
 		},
-		Retry: background.Retry{
+		Retry: []strategy.Strategy{
 			strategy.Limit(limit),
 		},
 	}
@@ -256,7 +258,7 @@ func Test_ManagerRetryStrategies(t *testing.T) {
 	var limit uint = 5
 	var count uint = 0
 	m := background.NewManagerWithOptions(background.Options{
-		Retry: background.Retry{
+		Retry: []strategy.Strategy{
 			strategy.Limit(limit),
 		},
 	})
@@ -273,8 +275,8 @@ func Test_ManagerRetryStrategies(t *testing.T) {
 func Test_RunTaskTypeLoop(t *testing.T) {
 	loops := 0
 	m := background.NewManager()
-	def := background.Task{
-		Type: background.TaskTypeLoop,
+	def := task.Task{
+		Type: task.TypeLoop,
 		Fn: func(ctx context.Context) error {
 			loops++
 			return nil
@@ -293,21 +295,21 @@ func Test_RunTaskTypeLoop_RetryStrategies(t *testing.T) {
 	count := 0
 
 	m := background.NewManagerWithOptions(background.Options{
-		Observer: background.DefaultObserver{
-			HandleOnTaskFailed: func(ctx context.Context, task background.Task, err error) {
+		Observer: observer.Default{
+			HandleOnTaskFailed: func(ctx context.Context, definition task.Task, err error) {
 				done <- err
 			},
 		},
 	})
-	def := background.Task{
-		Type: background.TaskTypeLoop,
+	def := task.Task{
+		Type: task.TypeLoop,
 		Fn: func(ctx context.Context) error {
 			count++
 			// TODO: Figure out why we need to wait here to avoid test timeout
 			<-time.After(time.Millisecond)
 			return assert.AnError
 		},
-		Retry: background.Retry{
+		Retry: []strategy.Strategy{
 			strategy.Limit(2),
 		},
 	}
@@ -329,8 +331,8 @@ func Test_RunTaskTypeLoop_CancelledParentContext(t *testing.T) {
 	done := make(chan error, 1)
 	var once sync.Once
 
-	def := background.Task{
-		Type: background.TaskTypeLoop,
+	def := task.Task{
+		Type: task.TypeLoop,
 		Fn: func(ctx context.Context) error {
 			once.Do(func() {
 				proceed <- true
@@ -356,62 +358,62 @@ func Test_RunTaskTypeLoop_CancelledParentContext(t *testing.T) {
 func Test_CountOf(t *testing.T) {
 	m := background.NewManager()
 
-	assert.Equal(t, 0, m.CountOf(background.TaskTypeOneOff))
-	assert.Equal(t, 0, m.CountOf(background.TaskTypeLoop))
-	assert.Equal(t, 0, m.CountOf(background.TaskType(3)))
+	assert.Equal(t, 0, m.CountOf(task.TypeOneOff))
+	assert.Equal(t, 0, m.CountOf(task.TypeLoop))
+	assert.Equal(t, 0, m.CountOf(task.Type(3)))
 
-	def := background.Task{
-		Type: background.TaskTypeOneOff,
+	def := task.Task{
+		Type: task.TypeOneOff,
 		Fn: func(ctx context.Context) error {
 			return nil
 		},
 	}
 	m.RunTask(context.Background(), def)
-	assert.Equal(t, 1, m.CountOf(background.TaskTypeOneOff))
-	assert.Equal(t, 0, m.CountOf(background.TaskTypeLoop))
-	assert.Equal(t, 0, m.CountOf(background.TaskType(3)))
+	assert.Equal(t, 1, m.CountOf(task.TypeOneOff))
+	assert.Equal(t, 0, m.CountOf(task.TypeLoop))
+	assert.Equal(t, 0, m.CountOf(task.Type(3)))
 	m.Wait()
 
-	def = background.Task{
-		Type: background.TaskTypeLoop,
+	def = task.Task{
+		Type: task.TypeLoop,
 		Fn: func(ctx context.Context) error {
 			return nil
 		},
 	}
 
 	m.RunTask(context.Background(), def)
-	assert.Equal(t, 0, m.CountOf(background.TaskTypeOneOff))
-	assert.Equal(t, 1, m.CountOf(background.TaskTypeLoop))
-	assert.Equal(t, 0, m.CountOf(background.TaskType(3)))
+	assert.Equal(t, 0, m.CountOf(task.TypeOneOff))
+	assert.Equal(t, 1, m.CountOf(task.TypeLoop))
+	assert.Equal(t, 0, m.CountOf(task.Type(3)))
 	m.Cancel()
 
-	assert.Equal(t, 0, m.CountOf(background.TaskTypeOneOff))
-	assert.Equal(t, 0, m.CountOf(background.TaskTypeLoop))
-	assert.Equal(t, 0, m.CountOf(background.TaskType(3)))
+	assert.Equal(t, 0, m.CountOf(task.TypeOneOff))
+	assert.Equal(t, 0, m.CountOf(task.TypeLoop))
+	assert.Equal(t, 0, m.CountOf(task.Type(3)))
 }
 
 func Test_Close(t *testing.T) {
 	m := background.NewManager()
 	proceed := make(chan bool, 1)
 
-	def := background.Task{
-		Type: background.TaskTypeLoop,
+	def := task.Task{
+		Type: task.TypeLoop,
 		Fn: func(ctx context.Context) error {
 			<-proceed
 			return nil
 		},
 	}
 	m.RunTask(context.Background(), def)
-	def = background.Task{
-		Type: background.TaskTypeOneOff,
+	def = task.Task{
+		Type: task.TypeOneOff,
 		Fn: func(ctx context.Context) error {
 			<-proceed
 			return nil
 		},
 	}
 	m.RunTask(context.Background(), def)
-	assert.Equal(t, 1, m.CountOf(background.TaskTypeOneOff))
-	assert.Equal(t, 1, m.CountOf(background.TaskTypeLoop))
+	assert.Equal(t, 1, m.CountOf(task.TypeOneOff))
+	assert.Equal(t, 1, m.CountOf(task.TypeLoop))
 
 	go func() {
 		proceed <- true
@@ -419,6 +421,6 @@ func Test_Close(t *testing.T) {
 	}()
 
 	m.Close()
-	assert.Equal(t, 0, m.CountOf(background.TaskTypeOneOff))
-	assert.Equal(t, 0, m.CountOf(background.TaskTypeLoop))
+	assert.Equal(t, 0, m.CountOf(task.TypeOneOff))
+	assert.Equal(t, 0, m.CountOf(task.TypeLoop))
 }
