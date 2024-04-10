@@ -32,6 +32,14 @@ type Task struct {
 	Retry Retry
 }
 
+// New creates a new task of the specified type and the provided function to be executed.
+func New(t Type, fn Fn) Task {
+	return Task{
+		Type: t,
+		Fn:   fn,
+	}
+}
+
 // Fn is the function to be executed in a goroutine.
 type Fn func(ctx context.Context) error
 
