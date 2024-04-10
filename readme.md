@@ -107,10 +107,10 @@ manager.RunTask(context.Background(), looping)
 
 ## Examples
 
-You can find a sample executable in the [samples](samples) folder. To run them, clone the repository and run:
+You can find a sample executable in the [examples](examples) folder. To run them, clone the repository and run:
 
 ```sh
-go run samples/slog/slog.go
+go run examples/slog/slog.go
 ```
 
 ## License
