@@ -17,7 +17,7 @@ var (
 	ErrUnknownType = errors.New("unknown task type")
 )
 
-// Manager keeps track of scheduled goroutines and provides mechanisms to wait for them to finish or cancel their
+// Manager keeps track of running goroutines and provides mechanisms to wait for them to finish or cancel their
 // execution. `Meta` is whatever you wish to associate with this task, usually something that will help you keep track
 // of the tasks in the observer.
 type Manager struct {
@@ -33,8 +33,8 @@ type Options struct {
 	// StalledThreshold is the amount of time within which the task should return before it is considered stalled. Note
 	// that no effort is made to actually stop or kill the task.
 	StalledThreshold time.Duration
-	// Observer allow you to register monitoring functions that are called when something happens with the tasks that you
-	// schedule. These are useful for logging, monitoring, etc.
+	// Observer allows you to register monitoring functions that are called when something happens with the tasks that you
+	// execute. These are useful for logging, monitoring, etc.
 	Observer observer.Observer
 	// Retry defines the default retry strategies that will be used for all tasks unless overridden by the task. Several
 	// strategies are provided by https://pkg.go.dev/github.com/kamilsk/retry/v5/strategy package.
@@ -61,14 +61,14 @@ func NewManagerWithOptions(options Options) *Manager {
 	}
 }
 
-// Run schedules the provided function to be executed once in a goroutine.
+// Run executes the provided function once in a goroutine.
 func (m *Manager) Run(ctx context.Context, fn task.Fn) {
 	definition := task.Task{Fn: fn}
 	m.RunTask(ctx, definition)
 }
 
-// RunTask schedules the provided task to be executed in a goroutine. The task will be executed according to its type.
-// By default, the task will be executed only once (TaskTypeOneOff).
+// RunTask executes the provided task in a goroutine. The task will be executed according to its type; by default, only
+// once (TaskTypeOneOff).
 func (m *Manager) RunTask(ctx context.Context, definition task.Task) {
 	ctx = context.WithoutCancel(ctx)
 	done := make(chan error, 1)
@@ -89,7 +89,7 @@ func (m *Manager) RunTask(ctx context.Context, definition task.Task) {
 	}
 }
 
-// Wait blocks until all scheduled one-off tasks have finished. Adding more one-off tasks will prolong the wait time.
+// Wait blocks until all running one-off tasks have finished. Adding more one-off tasks will prolong the wait time.
 func (m *Manager) Wait() {
 	m.taskmgr.group.Wait()
 }

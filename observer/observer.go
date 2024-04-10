@@ -6,7 +6,7 @@ import (
 	"go.strv.io/background/task"
 )
 
-// Observer implements a set of methods that are called when certain events happen with the tasks that you schedule.
+// Observer implements a set of methods that are called when certain events happen with the tasks that you execute.
 type Observer interface {
 	// OnTaskAdded is called immediately after scheduling the Task for execution.
 	OnTaskAdded(ctx context.Context, definition task.Task)
