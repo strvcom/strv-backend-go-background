@@ -2,7 +2,6 @@ package task
 
 import (
 	"context"
-	"errors"
 
 	"github.com/kamilsk/retry/v5/strategy"
 )
@@ -16,11 +15,6 @@ const (
 	// TypeLoop will be executed in an infinite loop until the manager's Cancel() method is called. The task will
 	// restart immediately after the previous iteration returns.
 	TypeLoop
-)
-
-var (
-	// ErrUnknownType is returned when the task type is not a valid value of Type.
-	ErrUnknownType = errors.New("unknown task type")
 )
 
 // Task describes how a unit of work (a function) should be executed.

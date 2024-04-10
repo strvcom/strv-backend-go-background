@@ -2,6 +2,7 @@ package background
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
@@ -9,6 +10,11 @@ import (
 	"go.strv.io/background/task"
 
 	"github.com/kamilsk/retry/v5"
+)
+
+var (
+	// ErrUnknownType is returned when the task type is not a valid value of Type.
+	ErrUnknownType = errors.New("unknown task type")
 )
 
 // Manager keeps track of scheduled goroutines and provides mechanisms to wait for them to finish or cancel their
@@ -79,7 +85,7 @@ func (m *Manager) RunTask(ctx context.Context, definition task.Task) {
 		go m.loop(ctx, definition, done)
 
 	default:
-		m.observer.OnTaskFailed(ctx, definition, task.ErrUnknownType)
+		m.observer.OnTaskFailed(ctx, definition, ErrUnknownType)
 	}
 }
 
