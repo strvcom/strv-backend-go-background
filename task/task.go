@@ -2,7 +2,6 @@ package task
 
 import (
 	"context"
-	"errors"
 
 	"github.com/kamilsk/retry/v5/strategy"
 )
@@ -18,11 +17,6 @@ const (
 	TypeLoop
 )
 
-var (
-	// ErrUnknownType is returned when the task type is not a valid value of Type.
-	ErrUnknownType = errors.New("unknown task type")
-)
-
 // Task describes how a unit of work (a function) should be executed.
 type Task struct {
 	// Fn is the function to be executed in a goroutine.
@@ -36,6 +30,14 @@ type Task struct {
 	// strategies you might have configured in the Manager. Several strategies are provided by
 	// https://pkg.go.dev/github.com/kamilsk/retry/v5/strategy package.
 	Retry Retry
+}
+
+// New creates a new task of the specified type and the provided function to be executed.
+func New(t Type, fn Fn) Task {
+	return Task{
+		Type: t,
+		Fn:   fn,
+	}
 }
 
 // Fn is the function to be executed in a goroutine.

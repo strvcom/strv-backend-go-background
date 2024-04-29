@@ -20,7 +20,7 @@ go get go.strv.io/background
 
 ## Usage
 
-There are two types of tasks you can schedule:
+There are two types of tasks you can execute:
 
 - one-off: a task that runs once and then finishes
 - looping: a task that runs repeatedly until it is stopped
@@ -73,7 +73,7 @@ maanger := background.NewManagerWithOptions(background.Options{
   Observer: observer.Slog{},
 })
 
-// Schedule a one-off task - the task will run only once (except if it fails and has a retry policy)
+// Executes a one-off task - the task will run only once (except if it fails and has a retry policy)
 oneoff := task.Task{
   Type: task.TypeOneOff,
   Fn: func(ctx context.Context) error {
@@ -88,7 +88,7 @@ oneoff := task.Task{
 
 manager.RunTask(context.Background(), oneoff)
 
-// Schedule a looping task - the task will run repeatedly until it is stopped
+// Execute a looping task - the task will run repeatedly until it is stopped
 looping := task.Task{
   Type: task.TypeLoop,
   Fn: func(ctx context.Context) error {
@@ -101,16 +101,16 @@ looping := task.Task{
   }
 }
 
-// Schedule the task to be continuously run in an infinite loop until manager.Close() is called
+// Execute the task to be continuously run in an infinite loop until manager.Close() is called
 manager.RunTask(context.Background(), looping)
 ```
 
 ## Examples
 
-You can find a sample executable in the [samples](samples) folder. To run them, clone the repository and run:
+You can find a sample executable in the [examples](examples) folder. To run them, clone the repository and run:
 
 ```sh
-go run samples/slog/slog.go
+go run examples/slog/slog.go
 ```
 
 ## License
